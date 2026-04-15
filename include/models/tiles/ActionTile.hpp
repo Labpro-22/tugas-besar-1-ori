@@ -6,7 +6,7 @@
 class ActionTile : public Tile {
     public:
         ActionTile(const std::string& code, const std::string& id, const std::string& name, const std::string& type);
-        // virtual void onLanded(Player& player) = 0;
+        // virtual void onLanded(Player& player) override = 0;
 };
 
 #endif
