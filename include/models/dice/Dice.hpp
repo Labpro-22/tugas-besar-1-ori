@@ -5,11 +5,6 @@
 #include <chrono>
 
 class Dice {
-    protected:
-        void throwDice();
-        void setDice(int x, int y);
-        bool isDouble();
-        int getTotal();
     private:
         int die1;
         int die2;
@@ -18,6 +13,10 @@ class Dice {
         std::uniform_int_distribution<int> dist;
     public: 
         Dice();
+        void throwDice();
+        void setDice(int x, int y);
+        bool isDouble();
+        int getTotal();
 };
 
 #endif

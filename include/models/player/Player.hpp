@@ -18,10 +18,18 @@ class Player {
         float discount_active;
         bool shield_active;
         int calculateNetWorth();
-        Dice* dice;
     public: 
         virtual void move();
         Player(std::string username);
+        std::string getUsername();
+        int getCurrTile();
+        int getBalance();
+        int getJailCounter();
+        std::vector<PropertyTile*> getOwnedProperties();
+        std::string getStatus();
+        bool isSkillUsed();
+        float getDiscountActive();
+        bool isShieldActive();
 };
 
 #endif

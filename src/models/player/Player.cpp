@@ -10,12 +10,21 @@ int Player::calculateNetWorth(){
 }
 
 Player::Player(std::string username) : username(username) {
-    curr_tile = 0; // start dari tile 0 ?
-    balance = 6767; // berapa start balance ?
+    curr_tile = 0;
+    balance = 6767; // TODO: set dari global config
     jail_counter = 0;
     status = "";
     skill_used = false;
     discount_active = 0.0;
     shield_active = false;;
-    dice = new Dice();
 }
+
+std::string Player::getUsername() {return username;}
+int Player::getCurrTile() {return curr_tile;}
+int Player::getBalance() {return balance;}
+int Player::getJailCounter() {return jail_counter;}
+std::vector<PropertyTile*> Player::getOwnedProperties() {return owned_properties;}
+std::string Player::getStatus() {return status;}
+bool Player::isSkillUsed() {return skill_used;}
+float Player::getDiscountActive() {return discount_active;}
+bool Player::isShieldActive() {return shield_active;}
