@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "include/core/GameConfig.hpp"
+#include "include/core/GameStates.hpp"
 #include "include/utils/exceptions/SaveLoadException.hpp"
 
 class FileManager{
