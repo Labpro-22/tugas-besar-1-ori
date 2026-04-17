@@ -8,39 +8,51 @@
 #include <iomanip>
 using namespace std;
 
-//PRIVATE : To Print a centered text with padding
 string OutputFormatter::centerOut(string str, int width){
     int text_length = str.size();
 
     //guard
     if(text_length > width){
-        cerr << "[ERROR] : Text Length > width !!!\n";
-        return;
+        return "[ERROR] : Text Length > width !!!\n";
     }
 
     int lpad = (width - text_length)/2; //floor
     int rpad = width - text_length - lpad; //handles odd width 
     return string(lpad, ' ') + str + string(rpad, ' ');
 }
-//PRIVATE : To Print a left text with padding
-string OutputFormatter::centerOut(string str, int width){
+string OutputFormatter::leftOut(string str, int width){
     int text_length = str.size();
 
     //guard
     if(text_length > width){
-        cerr << "[ERROR] : Text Length > width !!!\n";
-        return;
+        return "[ERROR] : Text Length > width !!!\n";
     }
 
     int rpad = width - text_length;
     return str + string(rpad, ' ');
 }
+string OutputFormatter::colorText(string str,string color){
+    return getGroupColor(color) + str + getGroupColor("RESET");
+}
+string OutputFormatter::getGroupColor(string colorGroup){
+    if (colorGroup == "BIRU TUA") return "\033[1;34m";
+    if (colorGroup == "MERAH")    return "\033[1;31m";
+    if (colorGroup == "HIJAU")    return "\033[1;32m";
+    if (colorGroup == "KUNING")   return "\033[1;33m";
+    if (colorGroup == "UNGU")     return "\033[1;35m";
+    if (colorGroup == "CYAN")     return "\033[1;36m";
+    return "\033[0m"; //the undefined color will automatically turn to default to prevent error
+}
+
+
+//------------------------------Public Methods-----------------------------------
 
 void OutputFormatter::printBoard(Board &b) {
     //nantian
 }
 
 void OutputFormatter::printAkta(PropertyTile &t){
+    cout << getGroupColor("RESET");//TODO: replace with t.getColorGroup();
     cout << "+================================+";
     cout << "|" << centerOut("AKTA KEPEMILIKAN",32) << "|\n";
     string tmp = "[t.getColorGroup()] t.getName() (t.getCode())";
@@ -61,7 +73,7 @@ void OutputFormatter::printAkta(PropertyTile &t){
     cout << "+================================+";
     cout << "|" << leftOut(" Status : STATUS (PEMAIN X)",32);
     cout << "+================================+";
-
+    cout << getGroupColor("RESET");
     //kalau kode tidak ditemukan PETAK XYZ TIDAK DITEMUKAN/BUKAN PROPERTI
 }
 
