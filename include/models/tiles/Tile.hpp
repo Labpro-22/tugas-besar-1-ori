@@ -13,6 +13,7 @@ class Tile {
 
     public:
         Tile(const std::string& code, const std::string& id, const std::string& name, const std::string& type);
+        virtual ~Tile() = default;
         std::string getTileCode() const;
         std::string getTileID() const;
         std::string getTileName() const;
