@@ -22,10 +22,10 @@ class OutputFormatter {
         void printBoard(Board &b);
         void printAkta(PropertyTile &t);
         void printProperty(Player &p);
-        void printLog(vector<LogEntry> &log);
+        void printLog(vector<LogEntry> &log, int n = -1);
         void printPlayerStatus(Player &p);
         void printAuction();
-        void printWin(vector<Player> &ps);
+        void printWin(vector<Player> &ps, bool isBankruptcy = false);
 };
 
 #endif

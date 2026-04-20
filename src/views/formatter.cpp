@@ -193,3 +193,83 @@ void OutputFormatter::printProperty(Player &p){
     cout << "Total kekayaan properti: M" << total << "\n";
 }
 
+void OutputFormatter::printLog(vector<LogEntry> &log, int n){
+    int total = (int)log.size();
+
+    // determine range
+    int start = 0;
+    if(n > 0 && n < total){
+        start = total - n;
+        cout << "=== Log Transaksi (" << n << " Terakhir) ===\n\n";
+    } else {
+        cout << "=== Log Transaksi Penuh ===\n\n";
+    }
+
+    for(int i = start; i < total; i++){
+        // TODO: adjust method names to actual LogEntry getters
+        cout << "[Turn " << log[i].getTurn()       << "] "
+             << log[i].getUsername()               << " | "
+             << leftOut(log[i].getActionType(), 8) << " | "
+             << log[i].getDescription()            << "\n";
+    }
+}
+
+void OutputFormatter::printWin(vector<Player> &ps, bool isBankruptcy){
+    const string SEP = "+================================+";
+
+    // ── HEADER ───────────────────────────────────────────────────────────────
+    cout << YELLOW << SEP << "\n";
+    if(isBankruptcy){
+        cout << "|" << centerOut("PERMAINAN SELESAI!", 32) << "|\n";
+        cout << "|" << centerOut("Semua pemain kecuali satu bangkrut", 32) << "|\n";
+    } else {
+        cout << "|" << centerOut("PERMAINAN SELESAI!", 32) << "|\n";
+        cout << "|" << centerOut("Batas giliran tercapai", 32) << "|\n";
+    }
+    cout << SEP << RESET << "\n\n";
+
+    // ── PLAYER RECAP (max turn only) ─────────────────────────────────────────
+    if(!isBankruptcy){
+        cout << "Rekap pemain:\n\n";
+        for(auto& p : ps){
+            cout << YELLOW << p.getUsername() << RESET << "\n"; //TODO: adjust method name
+            cout << leftOut("Uang", 10)     << ": M" << p.getBalance()              << "\n"; //TODO: adjust
+            cout << leftOut("Properti", 10) << ": "  << p.getOwnedProperties().size() << "\n"; //TODO: adjust
+            cout << leftOut("Kartu", 10)    << ": "  << p.getSpecialCards().size()    << "\n"; //TODO: adjust
+            cout << "\n";
+        }
+    } else {
+        cout << "Pemain tersisa:\n";
+        for(auto& p : ps)
+            cout << "  - " << p.getUsername() << "\n"; //TODO: adjust method name
+        cout << "\n";
+    }
+
+    // ── DETERMINE WINNER(S) ──────────────────────────────────────────────────
+    // winner = player(s) with highest net worth (balance + property values)
+    // TODO: replace getBalance() + calculateNetWorth() with actual method names
+    int maxWorth = 0;
+    for(auto& p : ps){
+        int worth = p.getBalance(); //TODO: + p.calculateNetWorth() when available
+        if(worth > maxWorth) maxWorth = worth;
+    }
+
+    vector<string> winners;
+    for(auto& p : ps){
+        int worth = p.getBalance(); //TODO: same as above
+        if(worth == maxWorth) winners.push_back(p.getUsername()); //TODO: adjust method name
+    }
+
+    // ── WINNER DISPLAY ────────────────────────────────────────────────────────
+    cout << YELLOW << SEP << "\n";
+    if(winners.size() == 1){
+        cout << "|" << centerOut("Pemenang: " + winners[0], 32) << "|\n";
+    } else {
+        cout << "|" << centerOut("SERI!", 32) << "|\n";
+        cout << SEP << "\n";
+        for(auto& w : winners)
+            cout << "|" << centerOut(w, 32) << "|\n";
+    }
+    cout << SEP << RESET << "\n";
+}
+
