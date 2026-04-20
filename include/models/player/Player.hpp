@@ -30,6 +30,13 @@ class Player {
         bool isSkillUsed();
         float getDiscountActive();
         bool isShieldActive();
+
+        void setCurrTile(int tile);
+        void addBalance(int amount);
+        void setStatus(std::string status);
+        void setSkillUsed(bool used);
+        void setDiscountActive(float discount);
+        void setShieldActive(bool active);
 };
 
 #endif

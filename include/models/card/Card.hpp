@@ -1,10 +1,16 @@
 #ifndef CARD_HPP
 #define CARD_HPP
 
+#include <string>
+#include <vector>
+
+class Player;
+
 class Card {
     public:
         Card();
-        // virtual void action(Player& player) = 0;
+        virtual ~Card() = default;
+        virtual void action(Player& player) = 0;
 };
 
 class ChanceCard : public Card {

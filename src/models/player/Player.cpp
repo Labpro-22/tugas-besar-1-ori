@@ -28,3 +28,11 @@ std::string Player::getStatus() {return status;}
 bool Player::isSkillUsed() {return skill_used;}
 float Player::getDiscountActive() {return discount_active;}
 bool Player::isShieldActive() {return shield_active;}
+
+// Setters — dibutuhkan oleh card actions
+void Player::setCurrTile(int tile) { curr_tile = tile; }
+void Player::addBalance(int amount) { balance += amount; }
+void Player::setStatus(std::string newStatus) { status = newStatus; }
+void Player::setSkillUsed(bool used) { skill_used = used; }
+void Player::setDiscountActive(float discount) { discount_active = discount; }
+void Player::setShieldActive(bool active) { shield_active = active; }
