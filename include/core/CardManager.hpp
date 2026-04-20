@@ -1,14 +1,14 @@
-#ifndef ACTIONMANAGER_HPP
-#define ACTIONMANAGER_HPP
+#ifndef CARDMANAGER_HPP
+#define CARDMANAGER_HPP
 
+#include "include/models/card/Card.hpp"
+#include "include/models/player/Player.hpp"
 #include <vector>
 
-class Card;
-class Player;
-
-class ActionManager
+class CardManager
 {
 public:
+    static void getCard(Player &player);
     static void resolveCardEffect(
         Card &card,
         Player &active_player,
