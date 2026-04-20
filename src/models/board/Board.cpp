@@ -13,9 +13,9 @@ namespace
     }
 } // namespace
 
-Board::Board(const std::vector<Tile *> tiles) : tiles(tiles) {}
+Board::Board(const std::vector<Tile *> &tiles) : tiles(tiles) {}
 
-Tile *Board::getTileByCode(std::string code)
+Tile *Board::getTileByCode(std::string code) const
 {
     for (Tile *tile : tiles)
     {
@@ -28,7 +28,7 @@ Tile *Board::getTileByCode(std::string code)
     return nullptr;
 }
 
-Tile *Board::getTileByIndex(int index)
+Tile *Board::getTileByIndex(int index) const
 {
     if (tiles.empty())
     {
@@ -39,7 +39,7 @@ Tile *Board::getTileByIndex(int index)
     return tiles[normalized_index];
 }
 
-std::vector<PropertyTile *> Board::getPropertiesByColorGroup(std::string color)
+std::vector<PropertyTile *> Board::getPropertiesByColorGroup(std::string color) const
 {
     std::vector<PropertyTile *> matching_properties;
 
@@ -82,4 +82,9 @@ int Board::getTileIndex(std::string code) const
     }
 
     return -1;
+}
+
+int Board::getTileCount() const
+{
+    return static_cast<int>(tiles.size());
 }

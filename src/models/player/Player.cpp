@@ -1,5 +1,6 @@
 #include "include/models/player/Player.hpp"
 
+#include <algorithm>
 #include <climits>
 
 void Player::move()
@@ -69,3 +70,64 @@ std::string Player::getStatus() { return status; }
 bool Player::isSkillUsed() { return skill_used; }
 float Player::getDiscountActive() { return discount_active; }
 bool Player::isShieldActive() { return shield_active; }
+void Player::setCurrTile(int tile) { curr_tile = tile; }
+void Player::addBalance(int amount) { balance += amount; }
+void Player::setStatus(std::string newStatus) { status = newStatus; }
+void Player::setSkillUsed(bool used) { skill_used = used; }
+void Player::setDiscountActive(float discount) { discount_active = discount; }
+void Player::setShieldActive(bool active) { shield_active = active; }
+
+void Player::addOwnedProperty(PropertyTile *property)
+{
+    if (property == nullptr)
+    {
+        return;
+    }
+
+    for (PropertyTile *owned_property : owned_properties)
+    {
+        if (owned_property == property)
+        {
+            return;
+        }
+    }
+
+    owned_properties.push_back(property);
+    property->setOwner(this);
+}
+
+bool Player::removeOwnedProperty(std::string tile_code)
+{
+    auto iterator = std::find_if(
+        owned_properties.begin(),
+        owned_properties.end(),
+        [&tile_code](PropertyTile *property)
+        {
+            return property != nullptr && property->getTileCode() == tile_code;
+        });
+
+    if (iterator == owned_properties.end())
+    {
+        return false;
+    }
+
+    if (*iterator != nullptr && (*iterator)->getTileOwner() == this)
+    {
+        (*iterator)->setOwner(nullptr);
+    }
+
+    owned_properties.erase(iterator);
+    return true;
+}
+
+void Player::clearTurnModifiers()
+{
+    skill_used = false;
+    discount_active = 0.0F;
+    shield_active = false;
+}
+
+int Player::getNetWorth()
+{
+    return calculateNetWorth();
+}

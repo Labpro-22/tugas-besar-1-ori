@@ -3,11 +3,11 @@
 
 #include "include/models/player/Player.hpp"
 
-class Bot : public Player {
-    private:
-        void move() override;
-    public: 
-        Bot(std::string username);
+class Bot : public Player
+{
+public:
+    void move() override;
+    Bot(std::string username);
 };
 
 #endif

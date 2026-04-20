@@ -1,20 +1,29 @@
 #include "include/models/tiles/Tile.hpp"
 
-Tile::Tile(const std::string& code, const std::string& id, const std::string& name, const std::string& type) 
+Tile::Tile(const std::string &code, const std::string &id, const std::string &name, const std::string &type)
     : code(code), id(id), name(name), type(type) {}
 
-std::string Tile::getTileCode() const {
+std::string Tile::getTileCode() const
+{
     return code;
 }
 
-std::string Tile::getTileID() const {
+std::string Tile::getTileID() const
+{
     return id;
 }
 
-std::string Tile::getTileName() const {
+std::string Tile::getTileName() const
+{
     return name;
 }
 
-std::string Tile::getTileType() const {
+std::string Tile::getTileType() const
+{
     return type;
+}
+
+void Tile::onLanded(Player &player)
+{
+    (void)player;
 }

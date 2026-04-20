@@ -2,44 +2,62 @@
 
 #include <stdexcept>
 
-namespace {
-bool isDiceValueValid(int value) {
-    return value >= 1 && value <= 6;
-}
+namespace
+{
+    bool isDiceValueValid(int value)
+    {
+        return value >= 1 && value <= 6;
+    }
 } // namespace
 
-void Dice::throwDice(){
+void Dice::throwDice()
+{
     die1 = dist(engine);
     die2 = dist(engine);
 
-    if (isDouble()) {
+    if (isDouble())
+    {
         double_count++;
-    } else {
+    }
+    else
+    {
         double_count = 0;
     }
 }
 
-void Dice::setDice(int x, int y){
-    if (!isDiceValueValid(x) || !isDiceValueValid(y)) {
+void Dice::setDice(int x, int y)
+{
+    if (!isDiceValueValid(x) || !isDiceValueValid(y))
+    {
         throw std::out_of_range("Dice values must be in range [1, 6].");
     }
 
     die1 = x;
     die2 = y;
 
-    if (isDouble()) {
+    if (isDouble())
+    {
         double_count++;
-    } else {
+    }
+    else
+    {
         double_count = 0;
     }
 }
 
-bool Dice::isDouble(){
+bool Dice::isDouble() const
+{
     return die1 == die2;
 }
 
-int Dice::getTotal(){
+int Dice::getTotal() const
+{
     return die1 + die2;
+}
+
+int Dice::getDoubleCount() const
+{
+    return double_count;
 }
 
 Dice::Dice() : die1(0), die2(0), double_count(0),

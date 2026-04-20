@@ -1,6 +1,7 @@
 #include "include/models/player/Bot.hpp"
 
-void Bot::move(){
+void Bot::move()
+{
     Player::move();
 }
 
