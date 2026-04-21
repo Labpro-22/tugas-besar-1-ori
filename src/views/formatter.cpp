@@ -1,8 +1,5 @@
 #include "formatter.hpp"
-#include "../../include/models/board/Board.hpp"
-#include "../../include/models/player/Player.hpp"
-#include "../../include/models/tiles/Tile.hpp"
-#include "../../include/models/log-entry/LogEntry.hpp"
+#include "../../include/models/tiles/PropertyTile.hpp"
 #include <vector>
 #include <map>
 #include <iostream>
@@ -36,28 +33,42 @@ string OutputFormatter::colorText(string str, string color){
     return color + str + RESET;
 }
 string OutputFormatter::getGroupColor(string colorGroup){
-    if (colorGroup == "BIRU TUA") return "\033[1;34m";
-    if (colorGroup == "MERAH")    return "\033[1;31m";
-    if (colorGroup == "HIJAU")    return "\033[1;32m";
-    if (colorGroup == "KUNING")   return "\033[1;33m";
-    if (colorGroup == "UNGU")     return "\033[1;35m";
-    if (colorGroup == "CYAN")     return "\033[1;36m";
-    return "\033[0m"; //the undefined color will automatically turn to default to prevent error
+    if (colorGroup == "BIRU TUA" || colorGroup == "BT") return "\033[1;34m";
+    if (colorGroup == "MERAH"    || colorGroup == "MR") return "\033[1;31m";
+    if (colorGroup == "HIJAU"    || colorGroup == "HJ") return "\033[1;32m";
+    if (colorGroup == "KUNING"   || colorGroup == "KN") return "\033[1;33m";
+    if (colorGroup == "UNGU"     || colorGroup == "PK" || colorGroup == "PINK") return "\033[1;35m";
+    if (colorGroup == "CYAN"     || colorGroup == "BM" || colorGroup == "BIRU MUDA") return "\033[1;36m";
+    if (colorGroup == "COKLAT"   || colorGroup == "CK") return "\033[0;33m";
+    if (colorGroup == "ORANGE"   || colorGroup == "OR") return "\033[38;5;208m";
+    return "\033[0m";
+}
+string OutputFormatter::getColorCode(string colorGroup, string tileType){
+    if (colorGroup == "BIRU TUA" || colorGroup == "BT") return "BT";
+    if (colorGroup == "MERAH"    || colorGroup == "MR")  return "MR";
+    if (colorGroup == "HIJAU"    || colorGroup == "HJ")  return "HJ";
+    if (colorGroup == "KUNING"   || colorGroup == "KN")  return "KN";
+    if (colorGroup == "UNGU"     || colorGroup == "PK" || colorGroup == "PINK") return "PK";
+    if (colorGroup == "CYAN"     || colorGroup == "BM" || colorGroup == "BIRU MUDA") return "BM";
+    if (colorGroup == "COKLAT"   || colorGroup == "CK")  return "CK";
+    if (colorGroup == "ORANGE"   || colorGroup == "OR") return "OR";
+    if (tileType == "UTILITY"    || tileType == "AB")  return "AB";
+    return "DF";
 }
 
 
-vector<string> OutputFormatter::renderTile(string code, string name, string colorGroup, int w, int h) {
+vector<string> OutputFormatter::renderTile(string line1, string line2, string colorGroup, int w, int h) {
     string color  = getGroupColor(colorGroup);
     string border = color + "+" + string(w, '-') + "+" + RESET;
     string empty  = color + "|" + string(w, ' ') + "|" + RESET;
 
-    // truncate name to fit (leave 1 space prefix)
-    if((int)name.size() > w - 1) name = name.substr(0, w - 1);
+    if((int)line1.size() > w) line1 = line1.substr(0, w);
+    if((int)line2.size() > w) line2 = line2.substr(0, w);
 
     vector<string> lines;
     lines.push_back(border);
-    lines.push_back(color + "|" + centerOut(code, w) + "|" + RESET);
-    lines.push_back(color + "|" + leftOut(" " + name, w) + "|" + RESET);
+    lines.push_back(color + "|" + leftOut(line1, w) + "|" + RESET);
+    lines.push_back(color + "|" + leftOut(line2, w) + "|" + RESET);
     while((int)lines.size() < h - 1) lines.push_back(empty);
     lines.push_back(border);
     return lines;
@@ -65,57 +76,125 @@ vector<string> OutputFormatter::renderTile(string code, string name, string colo
 
 //------------------------------Public Methods-----------------------------------
 
-void OutputFormatter::printBoard(Board &b) {
-    const int TW = 10, TH = 4;  // normal tile inner width, height
-    const int CW = 14, CH = 6;  // corner tile inner width, height
+void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, int maxTurn) {
+    const int TW = 10, TH = 4;
 
-    // TODO: get tiles from board
-    // vector<Tile*> tiles = b.getTiles();
-    // Tile index layout (clockwise from GO at bottom-right):
-    //   BR=0, bottom[1..sideH], BL=sideH+1
-    //   left[sideH+2..sideH+sideV+1], TL=sideH+sideV+2
-    //   top[sideH+sideV+3..2*sideH+sideV+2], TR=2*sideH+sideV+3
-    //   right[2*sideH+sideV+4..2*sideH+2*sideV+3]
-    // nxn   : sideH == sideV
-    // nxn+1 : sideH == sideV + 1 (more tiles on top/bottom)
-    int sideH = 9, sideV = 9; // TODO: derive from tiles.size()
+    int total = b.getTileCount();
+    int sideH, sideV;
+    if ((total - 4) % 4 == 0) {
+        sideH = sideV = (total - 4) / 4;
+    } else {
+        sideV = (total - 6) / 4;
+        sideH = sideV + 1;
+    }
 
-    // placeholder — replace args with tiles[idx]->getCode(), getName(), getColorGroup()
-    auto mkTile = [&](int /*idx*/, int w, int h) {
-        return renderTile("???", "TILE", "", w, h);
+    int centerW = sideH * (TW + 2);
+    int iw = centerW - 2;
+
+    // ── BUILD CENTER LEGEND ───────────────────────────────────────────────────
+    const int BOX = min(34, iw - 4);
+    string eqLine  = string(BOX, '=');
+    string daLine  = string(BOX, '-');
+
+    auto padC = [&](string s) -> string {
+        if ((int)s.size() >= iw) return s.substr(0, iw);
+        int lp = (iw - (int)s.size()) / 2;
+        return string(lp, ' ') + s + string(iw - (int)s.size() - lp, ' ');
+    };
+    int boxOffset = (iw - BOX) / 2;
+    auto padL = [&](string s) -> string {
+        string r = string(boxOffset, ' ') + s;
+        if ((int)r.size() < iw) r += string(iw - (int)r.size(), ' ');
+        return r.substr(0, iw);
+    };
+
+    string titleBox = "||" + centerOut("NIMONSPOLI", BOX - 4) + "||";
+    string turnStr  = (turn > 0 && maxTurn > 0)
+                      ? "TURN " + to_string(turn) + " / " + to_string(maxTurn) : "";
+
+    vector<string> centerContent = {
+        string(iw, ' '),
+        padC(eqLine),
+        padC(titleBox),
+        padC(eqLine),
+        string(iw, ' '),
+        padC(turnStr),
+        string(iw, ' '),
+        padC(daLine),
+        padL("LEGENDA KEPEMILIKAN & STATUS"),
+        padL("P1-P4 : Properti milik Pemain 1-4"),
+        padL("^     : Rumah Level 1"),
+        padL("^^    : Rumah Level 2"),
+        padL("^^^   : Rumah Level 3"),
+        padL("*     : Hotel (Maksimal)"),
+        padL("(1)-(4): Bidak (IN=Tahanan, V=Mampir)"),
+        padC(daLine),
+        padL("KODE WARNA:"),
+        padL("[CK]=Coklat    [MR]=Merah"),
+        padL("[BM]=Biru Muda [KN]=Kuning"),
+        padL("[PK]=Pink      [HJ]=Hijau"),
+        padL("[OR]=Orange    [BT]=Biru Tua"),
+        padL("[DF]=Aksi      [AB]=Utilitas"),
+        padC(daLine),
+    };
+    int numInner = sideV * TH - 2;
+    while ((int)centerContent.size() < numInner) centerContent.push_back(string(iw, ' '));
+
+    // ── TILE BUILDER ──────────────────────────────────────────────────────────
+    auto mkTile = [&](int idx, int w, int h) {
+        Tile* t = b.getTileByIndex(idx);
+        PropertyTile* pt = dynamic_cast<PropertyTile*>(t);
+        string colorGroup = pt ? pt->getColorGroup() : "";
+        string colorCode  = getColorCode(colorGroup, t->getTileType());
+        string line1 = "[" + colorCode + "] " + t->getTileCode();
+
+        string line2 = "";
+        if (pt && pt->getTileOwner() != nullptr) {
+            string pNum = "P?";
+            for (int i = 0; i < (int)players.size(); i++)
+                if (players[i] == pt->getTileOwner()) { pNum = "P" + to_string(i+1); break; }
+            int lvl = pt->getLevel();
+            string lvlStr = (lvl >= 4) ? "*" : string(lvl, '^');
+            line2 = pNum + (lvlStr.empty() ? "" : " " + lvlStr);
+        }
+        string tokens = "";
+        for (int i = 0; i < (int)players.size(); i++)
+            if (players[i]->getCurrTile() == idx) tokens += "(" + to_string(i+1) + ")";
+        if (!tokens.empty()) line2 += (line2.empty() ? "" : " ") + tokens;
+
+        return renderTile(line1, line2, colorGroup, w, h);
     };
 
     // ── TOP ROW ──────────────────────────────────────────────────────────────
     int TL = sideH + sideV + 2;
     int TR = 2*sideH + sideV + 3;
 
-    // all tiles in top row rendered at CH height so rows align
     vector<vector<string>> topRow;
-    topRow.push_back(mkTile(TL, CW, CH));
-    for(int i = TL+1; i < TR; i++) topRow.push_back(mkTile(i, TW, CH));
-    topRow.push_back(mkTile(TR, CW, CH));
+    topRow.push_back(mkTile(TL, TW, TH));
+    for (int i = TL+1; i < TR; i++) topRow.push_back(mkTile(i, TW, TH));
+    topRow.push_back(mkTile(TR, TW, TH));
 
-    for(int l = 0; l < CH; l++){
-        for(auto& t : topRow) cout << t[l];
+    for (int l = 0; l < TH; l++) {
+        for (auto& t : topRow) cout << t[l];
         cout << "\n";
     }
 
     // ── MIDDLE ROWS ───────────────────────────────────────────────────────────
-    int centerW = sideH * (TW + 2); // total width of center box
-    for(int row = 0; row < sideV; row++){
-        int leftIdx  = sideH + sideV + 1 - row; // left col top-to-bottom on screen
+    int cl = 0;
+    for (int row = 0; row < sideV; row++) {
+        int leftIdx  = sideH + sideV + 1 - row;
         int rightIdx = 2*sideH + sideV + 4 + row;
         vector<string> L = mkTile(leftIdx,  TW, TH);
         vector<string> R = mkTile(rightIdx, TW, TH);
 
-        for(int l = 0; l < TH; l++){
+        for (int l = 0; l < TH; l++) {
             cout << L[l];
             bool firstLine = (row == 0 && l == 0);
             bool lastLine  = (row == sideV-1 && l == TH-1);
-            if(firstLine || lastLine)
-                cout << "+" + string(centerW - 2, '-') + "+";
+            if (firstLine || lastLine)
+                cout << "+" + string(iw, '-') + "+";
             else
-                cout << "|" + string(centerW - 2, ' ') + "|";
+                cout << "|" + centerContent[cl++] + "|";
             cout << R[l] << "\n";
         }
     }
@@ -123,14 +202,13 @@ void OutputFormatter::printBoard(Board &b) {
     // ── BOTTOM ROW ────────────────────────────────────────────────────────────
     int BL = sideH + 1;
 
-    // all tiles in bottom row also rendered at CH height
     vector<vector<string>> botRow;
-    botRow.push_back(mkTile(BL, CW, CH));
-    for(int i = sideH; i >= 1; i--) botRow.push_back(mkTile(i, TW, CH));
-    botRow.push_back(mkTile(0, CW, CH)); // BR = GO
+    botRow.push_back(mkTile(BL, TW, TH));
+    for (int i = sideH; i >= 1; i--) botRow.push_back(mkTile(i, TW, TH));
+    botRow.push_back(mkTile(0, TW, TH));
 
-    for(int l = 0; l < CH; l++){
-        for(auto& t : botRow) cout << t[l];
+    for (int l = 0; l < TH; l++) {
+        for (auto& t : botRow) cout << t[l];
         cout << "\n";
     }
 }
@@ -183,7 +261,7 @@ void OutputFormatter::printProperty(Player &p){
         cout << color << "[" << group << "]" << getGroupColor("RESET") << "\n";
         for(auto& tile : tiles){
             string status = tile->isMortgage() ? "MORTGAGED [M]" : "OWNED"; //TODO: adjust to actual method name
-            string label = tile->getName() + " (" + tile->getCode() + ")"; //TODO: adjust to actual method name
+            string label = tile->getTileName() + " (" + tile->getTileCode() + ")";
             cout << "  - " << leftOut(label, 30) << leftOut("MXXX", 8) << status << "\n";
             total += tile->getBuyPrice(); //TODO: adjust to actual method name
         }
@@ -206,11 +284,7 @@ void OutputFormatter::printLog(vector<LogEntry> &log, int n){
     }
 
     for(int i = start; i < total; i++){
-        // TODO: adjust method names to actual LogEntry getters
-        cout << "[Turn " << log[i].getTurn()       << "] "
-             << log[i].getUsername()               << " | "
-             << leftOut(log[i].getActionType(), 8) << " | "
-             << log[i].getDescription()            << "\n";
+        cout << log[i].getLogEntry() << "\n";
     }
 }
 
@@ -234,8 +308,7 @@ void OutputFormatter::printWin(vector<Player> &ps, bool isBankruptcy){
         for(auto& p : ps){
             cout << YELLOW << p.getUsername() << RESET << "\n"; //TODO: adjust method name
             cout << leftOut("Uang", 10)     << ": M" << p.getBalance()              << "\n"; //TODO: adjust
-            cout << leftOut("Properti", 10) << ": "  << p.getOwnedProperties().size() << "\n"; //TODO: adjust
-            cout << leftOut("Kartu", 10)    << ": "  << p.getSpecialCards().size()    << "\n"; //TODO: adjust
+            cout << leftOut("Properti", 10) << ": "  << p.getOwnedProperties().size() << "\n";
             cout << "\n";
         }
     } else {
