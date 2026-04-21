@@ -42,3 +42,6 @@ bin/
 
 # debug information files
 *.dwo
+
+# clangd
+.clangd
