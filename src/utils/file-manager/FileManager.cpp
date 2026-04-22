@@ -67,7 +67,7 @@ namespace
         return value;
     }
 
-    void validateSave(const GameConfig::SavePermission &permission)
+    void validateSave(const GameStates::SavePermission &permission)
     {
         if (!permission.is_at_start_of_turn || permission.has_rolled_dice || permission.has_executed_action)
         {
@@ -76,12 +76,12 @@ namespace
         }
     }
 
-    void validateLoad(const GameConfig::LoadPermission &permission)
+    void validateLoad(const GameStates::LoadPermission &permission)
     {
         if (!permission.is_before_game_start) throw SaveLoadException("Load hanya boleh dilakukan saat program baru berjalan dan permainan belum dimulai.");
     }
 
-    void writeCardState(std::ofstream &output, const GameConfig::CardState &card)
+    void writeCardState(std::ofstream &output, const GameStates::CardState &card)
     {
         output << card.type;
 
@@ -96,8 +96,8 @@ namespace
 
 void FileManager::saveConfig(
     const std::string &file_path,
-    const GameConfig::SaveState &state,
-    const GameConfig::SavePermission &permission)
+    const GameStates::SaveState &state,
+    const GameStates::SavePermission &permission)
 {
     validateSave(permission);
 
@@ -108,11 +108,11 @@ void FileManager::saveConfig(
     output << state.current_turn << " " << state.max_turn << "\n";
     output << state.players.size() << "\n";
 
-    for (const GameConfig::PlayerState &player : state.players)
+    for (const GameStates::PlayerState &player : state.players)
     {
         output << player.username << " " << player.money << " " << player.tile_code << " " << player.status << "\n";
         output << player.hand_cards.size() << "\n";
-        for (const GameConfig::CardState &card : player.hand_cards)
+        for (const GameStates::CardState &card : player.hand_cards)
             writeCardState(output, card);
     }
     for (std::size_t i = 0; i < state.turn_order.size(); ++i)
@@ -125,7 +125,7 @@ void FileManager::saveConfig(
     output << state.active_turn_player << "\n";
 
     output << state.properties.size() << "\n";
-    for (const GameConfig::PropertyState &property : state.properties){
+    for (const GameStates::PropertyState &property : state.properties){
         output  << property.tile_code << " "
                 << property.type << " "
                 << property.owner_username << " "
@@ -141,16 +141,16 @@ void FileManager::saveConfig(
     }
 
     output << state.logs.size() << "\n";
-    for (const GameConfig::LogState &log : state.logs){
+    for (const GameStates::LogState &log : state.logs){
         output << log.turn << " " << log.username << " " << log.action_type;
         if (!log.detail.empty()) output << " " << log.detail;
         output << "\n";
     }
 }
 
-GameConfig::SaveState FileManager::loadConfig(
+GameStates::SaveState FileManager::loadConfig(
     const std::string &file_path,
-    const GameConfig::LoadPermission &permission)
+    const GameStates::LoadPermission &permission)
 {
     validateLoad(permission);
 
@@ -158,7 +158,7 @@ GameConfig::SaveState FileManager::loadConfig(
     if (!input.is_open())
         throw SaveLoadException("Gagal membuka file save untuk dibaca: " + file_path);
 
-    GameConfig::SaveState state;
+    GameStates::SaveState state;
     int line_number = 0;
 
     std::string line = readNextNonemptyLine(input, line_number);
@@ -181,7 +181,7 @@ GameConfig::SaveState FileManager::loadConfig(
         tokens = splitByWhiteSpace(line);
         if (tokens.size() != 4) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS>'.");
 
-        GameConfig::PlayerState player;
+        GameStates::PlayerState player;
         player.username = tokens[0];
         player.money = parseIntegerToken(tokens[1], "UANG", line_number);
         player.tile_code = tokens[2];
@@ -200,7 +200,7 @@ GameConfig::SaveState FileManager::loadConfig(
             tokens = splitByWhiteSpace(line);
             if (tokens.empty() || tokens.size() > 3) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<JENIS_KARTU> [NILAI_KARTU] [SISA_DURASI]'.");
 
-            GameConfig::CardState card;
+            GameStates::CardState card;
             card.type = tokens[0];
             if (tokens.size() >= 2 && tokens[1] != "-") card.value = tokens[1];
             if (tokens.size() == 3) card.remaining_duration = tokens[2];
@@ -233,7 +233,7 @@ GameConfig::SaveState FileManager::loadConfig(
         tokens = splitByWhiteSpace(line);
         if (tokens.size() != 7) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<KODE_PETAK> <JENIS> <PEMILIK> <STATUS> <FMULT> <FDUR> <N_BANGUNAN>'.");
 
-        GameConfig::PropertyState property;
+        GameStates::PropertyState property;
         property.tile_code = tokens[0];
         property.type = tokens[1];
         property.owner_username = tokens[2];
@@ -274,7 +274,7 @@ GameConfig::SaveState FileManager::loadConfig(
     {
         line = readNextNonemptyLine(input, line_number);
         std::istringstream iss(line);
-        GameConfig::LogState log;
+        GameStates::LogState log;
         if (!(iss >> log.turn >> log.username >> log.action_type))throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<TURN> <USERNAME> <JENIS_AKSI> <DETAIL>'.");
         std::string detail;
         std::getline(iss, detail);

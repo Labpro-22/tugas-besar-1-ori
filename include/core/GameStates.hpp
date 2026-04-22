@@ -1,10 +1,10 @@
-#ifndef GAMECONFIG_HPP
-#define GAMECONFIG_HPP
+#ifndef GAMESTATES_HPP
+#define GAMESTATES_HPP
 
 #include <string>
 #include <vector>
 
-class GameConfig
+class GameStates
 {
 public:
     class CardState
