@@ -9,21 +9,23 @@ using namespace std;
 string OutputFormatter::centerOut(string str, int width){
     int text_length = str.size();
 
-    //guard
+    //truncate if too long
     if(text_length > width){
-        return "[ERROR] : Text Length > width !!!\n";
+        str = str.substr(0, width);
+        text_length = width;
     }
 
     int lpad = (width - text_length)/2; //floor
-    int rpad = width - text_length - lpad; //handles odd width 
+    int rpad = width - text_length - lpad; //handles odd width
     return string(lpad, ' ') + str + string(rpad, ' ');
 }
 string OutputFormatter::leftOut(string str, int width){
     int text_length = str.size();
 
-    //guard
+    //truncate if too long
     if(text_length > width){
-        return "[ERROR] : Text Length > width !!!\n";
+        str = str.substr(0, width);
+        text_length = width;
     }
 
     int rpad = width - text_length;

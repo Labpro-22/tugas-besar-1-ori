@@ -60,6 +60,16 @@ int Dice::getDoubleCount() const
     return double_count;
 }
 
+int Dice::getDie1() const
+{
+    return die1;
+}
+
+int Dice::getDie2() const
+{
+    return die2;
+}
+
 Dice::Dice() : die1(0), die2(0), double_count(0),
                engine(std::chrono::high_resolution_clock::now().time_since_epoch().count()),
                dist(1, 6) {}

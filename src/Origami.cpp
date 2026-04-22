@@ -150,6 +150,35 @@ Player* Origami::getCreditorAt(int tileIdx) const {
     return prop->getTileOwner();
 }
 
+bool Origami::hasPendingAction(Player &p) const {
+    int tileIdx = p.getCurrTile();
+    Tile *t = tiles[tileIdx];
+    string type = t->getTileType();
+
+    // Cek properti yang belum dimiliki (harus beli atau lelang)
+    if (type == "STREET") {
+        auto *prop = dynamic_cast<PropertyTile*>(t);
+        if (prop && !prop->getTileOwner() && !prop->isMortgage()) {
+            return true;  // Harus beli atau lelang
+        }
+    }
+
+    // Cek sewa yang harus dibayar
+    if (type == "STREET" || type == "RAILROAD" || type == "UTILITY") {
+        auto *prop = dynamic_cast<PropertyTile*>(t);
+        if (prop && prop->getTileOwner() && prop->getTileOwner() != &p && !prop->isMortgage()) {
+            return true;  // Harus bayar sewa
+        }
+    }
+
+    // Cek pajak yang harus dibayar
+    if (type == "TAX_PPH" || type == "TAX_PBM") {
+        return true;  // Harus bayar pajak
+    }
+
+    return false;
+}
+
 // ── promptNewGame ─────────────────────────────────────────────────────────────
 tuple<vector<Player*>, vector<Player*>, int>
 Origami::promptNewGame(int initBalance) {
@@ -314,8 +343,8 @@ bool Origami::rollAndMove(Player &p, bool manual, int d1, int d2) {
     int newTile = (oldTile + dice.getTotal()) % boardSize;
     p.setCurrTile(newTile);
 
-    cout << p.getUsername() << " melempar dadu: [" << (manual ? d1 : dice.getTotal() - dice.getTotal()/2)
-         << "] total " << dice.getTotal()
+    cout << p.getUsername() << " melempar dadu: " << dice.getDie1() << " + " << dice.getDie2()
+         << " = " << dice.getTotal()
          << (dice.isDouble() ? " (GANDA)" : "") << "\n";
     cout << "Pindah dari petak " << oldTile << " ke petak " << newTile << ".\n";
 
@@ -511,18 +540,250 @@ void Origami::cmdTebus(Player &p, const string &code) {
 }
 
 void Origami::cmdBangun(Player &p, const string &code) {
+    // Helper untuk padding string
+    auto padRight = [](const string &str, int width) -> string {
+        if ((int)str.length() >= width) return str.substr(0, width);
+        return str + string(width - str.length(), ' ');
+    };
+
+    // Helper untuk cek apakah pemain memonopoli color group
+    auto hasMonopoly = [&](const string &colorGroup) -> bool {
+        vector<PropertyTile*> groupProps = board.getPropertiesByColorGroup(colorGroup);
+        if (groupProps.empty()) return false;
+        for (auto *gp : groupProps) {
+            if (gp->getTileOwner() != &p) return false;
+        }
+        return true;
+    };
+
+    // Helper untuk mendapatkan level minimum di color group
+    auto getMinLevelInGroup = [&](const string &colorGroup) -> int {
+        vector<PropertyTile*> groupProps = board.getPropertiesByColorGroup(colorGroup);
+        if (groupProps.empty()) return 0;
+        int minLvl = groupProps[0]->getLevel();
+        for (auto *gp : groupProps) {
+            if (gp->getLevel() < minLvl) minLvl = gp->getLevel();
+        }
+        return minLvl;
+    };
+
+    // Helper untuk cek apakah semua petak di group sudah level 4 (siap upgrade ke hotel)
+    auto allReadyForHotel = [&](const string &colorGroup) -> bool {
+        vector<PropertyTile*> groupProps = board.getPropertiesByColorGroup(colorGroup);
+        if (groupProps.empty()) return false;
+        for (auto *gp : groupProps) {
+            if (gp->getLevel() < 4) return false;
+        }
+        return true;
+    };
+
+    // Jika code kosong, tampilkan menu lengkap
+    if (code.empty()) {
+        // Kumpulkan color group yang memenuhi syarat (monopoli)
+        map<string, vector<PropertyTile*>> eligibleGroups;
+        vector<PropertyTile*> allProps = p.getOwnedProperties();
+
+        for (auto *prop : allProps) {
+            // Hanya STREET yang bisa dibangun
+            if (prop->getTileType() != "STREET") continue;
+            string colorGroup = prop->getColorGroup();
+            if (colorGroup.empty()) continue;
+            if (!hasMonopoly(colorGroup)) continue;
+
+            // Cek apakah bisa dibangun (belum hotel dan memenuhi pemerataan)
+            int currentLevel = prop->getLevel();
+            if (currentLevel >= 5) continue; // Sudah hotel
+
+            int minLevelInGroup = getMinLevelInGroup(colorGroup);
+
+            // Bisa bangun jika level saat ini == min level di group (pemerataan)
+            // Atau jika semua sudah level 4 (upgrade ke hotel)
+            bool canBuild = false;
+            if (currentLevel < 4) {
+                // Bangun rumah
+                canBuild = (currentLevel == minLevelInGroup);
+            } else if (currentLevel == 4) {
+                // Upgrade ke hotel
+                canBuild = allReadyForHotel(colorGroup);
+            }
+
+            if (canBuild) {
+                eligibleGroups[colorGroup].push_back(prop);
+            }
+        }
+
+        if (eligibleGroups.empty()) {
+            cout << "Tidak ada color group yang memenuhi syarat untuk dibangun.\n";
+            cout << "Kamu harus memiliki seluruh petak dalam satu color group terlebih dahulu,\n";
+            cout << "atau masih ada bangunan yang tidak merata di color group tersebut.\n";
+            return;
+        }
+
+        // Tampilkan color group yang memenuhi syarat
+        cout << "\n=== Color Group yang Memenuhi Syarat ===\n";
+        vector<string> groupNames;
+        int idx = 1;
+        for (auto &[groupName, props] : eligibleGroups) {
+            groupNames.push_back(groupName);
+            cout << idx << ". [" << groupName << "]\n";
+            for (auto *prop : props) {
+                int lvl = prop->getLevel();
+                string lvlStr;
+                if (lvl == 0) lvlStr = "0 rumah";
+                else if (lvl == 1) lvlStr = "1 rumah";
+                else if (lvl == 2) lvlStr = "2 rumah";
+                else if (lvl == 3) lvlStr = "3 rumah";
+                else if (lvl == 4) lvlStr = "4 rumah";
+                else if (lvl == 5) lvlStr = "Hotel";
+
+                int cost = (lvl >= 4) ? prop->getHotelCost() : prop->getHouseCost();
+                cout << "   - " << padRight(prop->getTileName() + " (" + prop->getTileCode() + ")", 25)
+                     << " : " << padRight(lvlStr, 12) << " (Harga: M" << cost << ")\n";
+            }
+            idx++;
+        }
+
+        cout << "\nUang kamu saat ini: M" << p.getBalance() << "\n";
+        int choice = readInt("Pilih nomor color group (0 untuk batal): ", 0, static_cast<int>(groupNames.size()));
+        if (choice == 0) return;
+
+        string selectedGroup = groupNames[choice - 1];
+        vector<PropertyTile*> &groupProps = eligibleGroups[selectedGroup];
+
+        // Cek apakah semua sudah 4 rumah (siap upgrade ke hotel)
+        bool readyForHotel = allReadyForHotel(selectedGroup);
+
+        // Tampilkan petak yang bisa dibangun dalam color group
+        cout << "\nColor group [" << selectedGroup << "]:\n";
+        idx = 1;
+        vector<PropertyTile*> buildableProps;
+        for (auto *prop : groupProps) {
+            int lvl = prop->getLevel();
+            if (lvl >= 5) continue; // Skip yang sudah hotel
+
+            string lvlStr;
+            string marker;
+            if (lvl == 0) lvlStr = "0 rumah";
+            else if (lvl == 1) lvlStr = "1 rumah";
+            else if (lvl == 2) lvlStr = "2 rumah";
+            else if (lvl == 3) lvlStr = "3 rumah";
+            else if (lvl == 4) { lvlStr = "4 rumah"; marker = " <- siap upgrade ke hotel"; }
+
+            int cost = (lvl >= 4) ? prop->getHotelCost() : prop->getHouseCost();
+            cout << idx << ". " << padRight(prop->getTileName() + " (" + prop->getTileCode() + ")", 25)
+                 << " : " << lvlStr;
+            if (!marker.empty()) cout << marker;
+            cout << "\n";
+            buildableProps.push_back(prop);
+            idx++;
+        }
+
+        if (buildableProps.empty()) {
+            cout << "Tidak ada petak yang dapat dibangun dalam color group ini.\n";
+            return;
+        }
+
+        int propChoice = readInt("Pilih petak (0 untuk batal): ", 0, static_cast<int>(buildableProps.size()));
+        if (propChoice == 0) return;
+
+        PropertyTile *selectedProp = buildableProps[propChoice - 1];
+        int currentLvl = selectedProp->getLevel();
+        int cost = (currentLvl >= 4) ? selectedProp->getHotelCost() : selectedProp->getHouseCost();
+
+        if (currentLvl >= 4) {
+            // Upgrade ke hotel
+            cout << "Upgrade ke hotel? Biaya: M" << cost << " (y/n): ";
+            char confirm = readChar("", "YN");
+            if (confirm == 'N') {
+                cout << "Pembangunan dibatalkan.\n";
+                return;
+            }
+        }
+
+        // Lakukan pembangunan
+        if (p.getBalance() < cost) {
+            cout << "Saldo tidak cukup (perlu M" << cost << ", uang kamu: M" << p.getBalance() << ").\n";
+            return;
+        }
+
+        p.addBalance(-cost);
+        selectedProp->setLevel(currentLvl + 1);
+
+        string buildType = (currentLvl >= 4) ? "Hotel" : "1 rumah";
+        cout << "Kamu membangun " << buildType << " di " << selectedProp->getTileName()
+             << ". Biaya: M" << cost << "\n";
+        cout << "Uang tersisa: M" << p.getBalance() << "\n";
+
+        // Tampilkan status terbaru
+        cout << "\nStatus terbaru [" << selectedGroup << "]:\n";
+        vector<PropertyTile*> allGroupProps = board.getPropertiesByColorGroup(selectedGroup);
+        for (auto *gp : allGroupProps) {
+            int lvl = gp->getLevel();
+            string lvlStr;
+            if (lvl == 0) lvlStr = "0 rumah";
+            else if (lvl == 1) lvlStr = "1 rumah";
+            else if (lvl == 2) lvlStr = "2 rumah";
+            else if (lvl == 3) lvlStr = "3 rumah";
+            else if (lvl == 4) lvlStr = "4 rumah";
+            else if (lvl == 5) lvlStr = "Hotel";
+            cout << "  - " << padRight(gp->getTileName() + " (" + gp->getTileCode() + ")", 25) << " : " << lvlStr << "\n";
+        }
+
+        addLog(p, "BANGUN", selectedProp->getTileCode());
+        return;
+    }
+
+    // Jika code tidak kosong, gunakan perilaku lama (bangun langsung pada kode tertentu)
+    // Tapi tetap dengan validasi lengkap
     Tile *t = board.getTileByCode(code);
     if (!t) { cout << "Kode tidak ditemukan.\n"; return; }
     auto *prop = dynamic_cast<PropertyTile*>(t);
     if (!prop || prop->getTileOwner() != &p) {
         cout << "Bukan properti Anda.\n"; return;
     }
-    if (PropertyManager::build(p, *prop)) {
-        cout << "Bangunan ditambahkan ke " << code << ".\n";
-        addLog(p, "BANGUN", code);
-    } else {
-        cout << "Tidak bisa membangun.\n";
+    // Hanya STREET yang bisa dibangun
+    if (prop->getTileType() != "STREET") {
+        cout << "Hanya properti STREET yang dapat dibangun. Stasiun dan Utilitas tidak dapat dibangun.\n";
+        return;
     }
+    string colorGroup = prop->getColorGroup();
+    if (!hasMonopoly(colorGroup)) {
+        cout << "Anda belum memonopoli color group [" << colorGroup << "].\n";
+        cout << "Kamu harus memiliki seluruh petak dalam color group terlebih dahulu.\n";
+        return;
+    }
+    if (prop->getLevel() >= 5) {
+        cout << "Properti ini sudah mencapai level maksimal (Hotel).\n";
+        return;
+    }
+
+    // Cek pemerataan
+    int currentLvl = prop->getLevel();
+    int minLvl = getMinLevelInGroup(colorGroup);
+    if (currentLvl > minLvl) {
+        cout << "Tidak dapat membangun! Bangunan harus dibangun secara merata.\n";
+        cout << "Ada petak lain di color group [" << colorGroup << "] yang masih level " << minLvl << ".\n";
+        return;
+    }
+
+    // Cek jika upgrade ke hotel, semua harus sudah 4 rumah
+    if (currentLvl == 4 && !allReadyForHotel(colorGroup)) {
+        cout << "Tidak dapat upgrade ke hotel! Semua petak di color group harus memiliki 4 rumah terlebih dahulu.\n";
+        return;
+    }
+
+    int cost = (currentLvl >= 4) ? prop->getHotelCost() : prop->getHouseCost();
+    if (p.getBalance() < cost) {
+        cout << "Saldo tidak cukup (perlu M" << cost << ", uang kamu: M" << p.getBalance() << ").\n";
+        return;
+    }
+
+    p.addBalance(-cost);
+    prop->setLevel(currentLvl + 1);
+    string buildType = (currentLvl >= 4) ? "Hotel" : "1 rumah";
+    cout << "Kamu membangun " << buildType << " di " << prop->getTileName() << ".\n";
+    cout << "Biaya: M" << cost << ", Uang tersisa: M" << p.getBalance() << "\n";
+    addLog(p, "BANGUN", code);
 }
 
 void Origami::cmdLelang(Player &p, const string &code) {
@@ -634,6 +895,7 @@ void Origami::humanTurn(Player &p) {
     bool has_rolled          = false;
     bool turn_ended          = false;
     bool paid_fine_this_turn = false;
+    bool has_bonus_turn      = false;  // Track if player has bonus turn from double
     int  consec_doubles      = 0;
 
     cout << "\n=== Giliran " << p.getUsername()
@@ -678,8 +940,8 @@ void Origami::humanTurn(Player &p) {
             string code; cin >> code;
             cmdTebus(p, code);
         } else if (cmd == "BANGUN") {
-            string code; cin >> code;
-            cmdBangun(p, code);
+            // BANGUN tanpa argumen - tampilkan menu lengkap
+            cmdBangun(p, "");
         } else if (cmd == "GUNAKAN_KEMAMPUAN") {
             int idx; cin >> idx;
             cmdGunakanKemampuan(p, idx - 1);
@@ -734,8 +996,8 @@ void Origami::humanTurn(Player &p) {
                         addLog(p, "MASUK_PENJARA", "3x ganda");
                         turn_ended = true;
                     } else {
-                        cout << "Dadu ganda! Anda mendapat giliran tambahan.\n";
-                        has_rolled = false;
+                        cout << "Dadu ganda! Anda mendapat giliran tambahan setelah selesai.\n";
+                        has_bonus_turn = true;  // Mark that we have bonus turn pending
                     }
                 }
             }
@@ -767,8 +1029,19 @@ void Origami::humanTurn(Player &p) {
         } else if (cmd == "SELESAI") {
             if (!has_rolled && p.getStatus() != "JAIL" && !paid_fine_this_turn) {
                 cout << "Harus melempar dadu sebelum selesai.\n";
+            } else if (has_rolled && hasPendingAction(p)) {
+                cout << "Anda masih memiliki kewajiban yang harus diselesaikan (beli/bayar sewa/bayar pajak/lelang).\n";
             } else {
                 turn_ended = true;
+                // Handle bonus turn from double dice
+                if (has_bonus_turn && p.getStatus() != "JAIL" && p.getStatus() != "BANKRUPT") {
+                    cout << "\n>>> Giliran tambahan dari dadu ganda! <<<\n";
+                    has_rolled = false;
+                    has_bonus_turn = false;
+                    turn_ended = false;
+                    cout << "\n=== Giliran Tambahan " << p.getUsername() << " ===\n";
+                    formatter.printPlayerStatus(p);
+                }
             }
         } else {
             cout << "Perintah tidak dikenal: " << cmd << "\n";

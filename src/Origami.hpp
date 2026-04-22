@@ -91,6 +91,7 @@ private:
     int     activePlayerCount() const;
     Player* getCreditorAt(int tileIdx) const;
     void    addLog(Player &p, const std::string &action, const std::string &detail = "");
+    bool    hasPendingAction(Player &p) const;
 
 protected:
     void nextTurn();
