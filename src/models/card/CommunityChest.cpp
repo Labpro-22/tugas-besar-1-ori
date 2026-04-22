@@ -5,7 +5,7 @@ HappyBirthdayCard::HappyBirthdayCard() : CommunityChestCard() {}
 
 void HappyBirthdayCard::action(Player &player)
 {
-    // Multi-player transfer ditangani oleh ActionManager.
+    // Multi-player transfer ditangani oleh CardManager.
     (void)player;
 }
 
@@ -20,6 +20,6 @@ LegislativeCard::LegislativeCard() : CommunityChestCard() {}
 
 void LegislativeCard::action(Player &player)
 {
-    // Multi-player transfer ditangani oleh ActionManager.
+    // Multi-player transfer ditangani oleh CardManager.
     (void)player;
 }

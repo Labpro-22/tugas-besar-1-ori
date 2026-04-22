@@ -1,8 +1,6 @@
-#include "include/core/ActionManager.hpp"
+#include "include/core/CardManager.hpp"
 
-#include "include/models/card/Card.hpp"
 #include "include/models/card/CommunityChest.hpp"
-#include "include/models/player/Player.hpp"
 
 namespace
 {
@@ -12,7 +10,12 @@ namespace
     }
 } // namespace
 
-void ActionManager::resolveCardEffect(
+void CardManager::getCard(Player &player)
+{
+    player.clearTurnModifiers();
+}
+
+void CardManager::resolveCardEffect(
     Card &card,
     Player &active_player,
     const std::vector<Player *> &all_players)
@@ -32,7 +35,7 @@ void ActionManager::resolveCardEffect(
     card.action(active_player);
 }
 
-void ActionManager::applyHappyBirthday(
+void CardManager::applyHappyBirthday(
     Player &receiver,
     const std::vector<Player *> &all_players,
     int amount_per_player)
@@ -48,7 +51,7 @@ void ActionManager::applyHappyBirthday(
     }
 }
 
-void ActionManager::applyLegislative(
+void CardManager::applyLegislative(
     Player &payer,
     const std::vector<Player *> &all_players,
     int amount_per_player)
@@ -64,7 +67,7 @@ void ActionManager::applyLegislative(
     }
 }
 
-void ActionManager::transfer(Player &from, Player &to, int amount)
+void CardManager::transfer(Player &from, Player &to, int amount)
 {
     if (amount <= 0 || &from == &to)
     {
