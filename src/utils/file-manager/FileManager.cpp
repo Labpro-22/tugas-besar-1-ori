@@ -1,10 +1,21 @@
 #include "include/utils/file-manager/FileManager.hpp"
 
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "include/models/tiles/ChanceTile.hpp"
+#include "include/models/tiles/CommunityChestTile.hpp"
+#include "include/models/tiles/FestivalTile.hpp"
+#include "include/models/tiles/FreeParkingTile.hpp"
+#include "include/models/tiles/GoJailTile.hpp"
+#include "include/models/tiles/JailTile.hpp"
+#include "include/models/tiles/PropertyTile.hpp"
+#include "include/models/tiles/StartTile.hpp"
+#include "include/models/tiles/TaxTile.hpp"
 
 namespace
 {
@@ -283,4 +294,114 @@ GameConfig::SaveState FileManager::loadConfig(
     }
 
     return state;
+}
+
+// ── loadBoard ─────────────────────────────────────────────────────────────────
+std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
+{
+    // --- 1. Parse property.txt → keyed by tile code ---
+    struct PropData {
+        std::string name, type, color;
+        int price = 0, mortgage = 0, houseCost = 0, hotelCost = 0;
+        std::vector<int> rent;
+    };
+
+    std::map<std::string, PropData> props;
+    {
+        std::ifstream pf(configDir + "property.txt");
+        std::string line;
+        while (std::getline(pf, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            int id;
+            std::string code, name, type, color;
+            if (!(iss >> id >> code >> name >> type >> color)) continue;
+            PropData d;
+            d.name = name; d.type = type; d.color = color;
+            if (!(iss >> d.price >> d.mortgage)) continue;
+            if (type == "STREET") {
+                if (!(iss >> d.houseCost >> d.hotelCost)) continue;
+                int r;
+                while (iss >> r) d.rent.push_back(r);
+            }
+            props[code] = d;
+        }
+    }
+
+    auto makeProp = [&](const std::string &code, const std::string &nameHint) -> Tile* {
+        auto it = props.find(code);
+        if (it == props.end())
+            return new Tile(code, code, nameHint, "UNKNOWN");
+        const auto &d = it->second;
+        std::vector<int> rent = d.rent.empty() ? std::vector<int>{0} : d.rent;
+        return new PropertyTile(
+            code, code, d.name, d.type,
+            rent, d.mortgage, 0,
+            false, d.color,
+            d.price, d.price,
+            d.houseCost, d.hotelCost,
+            1, 0
+        );
+    };
+
+    // --- 2. Parse board.txt → ordered tile list ---
+    std::vector<Tile*> tiles;
+    std::ifstream bf(configDir + "board.txt");
+    if (!bf.is_open())
+        throw SaveLoadException("Gagal membuka board.txt di: " + configDir);
+
+    std::string line;
+    int expectedPos = 1;
+    while (std::getline(bf, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream iss(line);
+        int pos;
+        std::string code, name, type;
+        if (!(iss >> pos >> code >> name >> type)) continue;
+
+        if (pos != expectedPos)
+            throw SaveLoadException("board.txt: urutan petak tidak berurutan (expected " +
+                                    std::to_string(expectedPos) + ", got " +
+                                    std::to_string(pos) + ")");
+
+        std::string id = code + std::to_string(pos);
+
+        Tile* tile = nullptr;
+        if      (type == "START")           tile = new StartTile(code, id, name, "SPESIAL");
+        else if (type == "JAIL")            tile = new JailTile(code, id, name, "SPESIAL");
+        else if (type == "GO_JAIL")         tile = new GoJailTile(code, id, name, "SPESIAL");
+        else if (type == "FREE_PARKING")    tile = new FreeParkingTile(code, id, name, "SPESIAL");
+        else if (type == "FESTIVAL")        tile = new FestivalTile(code, id, name, "FESTIVAL");
+        else if (type == "CHANCE")          tile = new ChanceTile(code, id, name, "KARTU");
+        else if (type == "COMMUNITY_CHEST") tile = new CommunityChestTile(code, id, name, "KARTU");
+        else if (type == "TAX_PPH")         tile = new TaxTile(code, id, name, "PAJAK");
+        else if (type == "TAX_PBM")         tile = new TaxTile(code, id, name, "PAJAK");
+        else if (type == "STREET" || type == "RAILROAD" || type == "UTILITY")
+                                            tile = makeProp(code, name);
+        else                                tile = new Tile(code, id, name, type);
+
+        tiles.push_back(tile);
+        ++expectedPos;
+    }
+
+    return tiles;
+}
+
+// ── loadMiscConfig ────────────────────────────────────────────────────────────
+void FileManager::loadMiscConfig(const std::string &configDir,
+                                 int &outMaxTurn, int &outInitBalance)
+{
+    outMaxTurn     = 15;
+    outInitBalance = 1500;
+
+    std::ifstream file(configDir + "misc.txt");
+    if (!file.is_open()) return;
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream iss(line);
+        iss >> outMaxTurn >> outInitBalance;
+        return;
+    }
 }
