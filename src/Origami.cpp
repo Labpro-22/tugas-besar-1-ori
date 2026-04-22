@@ -928,12 +928,9 @@ void Origami::run() {
     cout << "====================================\n\n";
 
     string configDir = "config/";
-    char useCustom = readChar("Gunakan konfigurasi kustom? (Y/N): ", "YN");
-    if (useCustom == 'Y') {
-        cout << "Path direktori konfigurasi: ";
-        cin >> configDir;
-        if (configDir.back() != '/') configDir += '/';
-    }
+    cout << "Path direktori konfigurasi: ";
+    cin >> configDir;
+    if (configDir.back() != '/') configDir += '/';
 
     GameConfig cfg    = FileManager::loadGameConfig(configDir);
     int maxTurn       = cfg.getMaxTurn();
