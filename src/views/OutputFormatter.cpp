@@ -281,28 +281,38 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
 void OutputFormatter::printAkta(PropertyTile &t, Board &b){
     initializeColors(b);
     string color = getGroupColor(t.getColorGroup());
-    cout << color;
-    cout << "+================================+\n";
-    cout << "|" << centerOut("AKTA KEPEMILIKAN",32) << "|\n";
-    string tmp = "[" + t.getColorGroup() + "] t.getName() (t.getCode())"; //TODO: replace with actual calls
-    cout << "|" << centerOut(tmp,32) << "|\n";
-    cout << "+================================+\n";
-    cout << "|" << leftOut(" Harga Beli",  22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "|" << leftOut(" Nilai Gadai", 22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "+--------------------------------+\n";
-    cout << "|" << leftOut(" Sewa (unimproved)", 22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "|" << leftOut(" Sewa (1 rumah)",    22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "|" << leftOut(" Sewa (2 rumah)",    22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "|" << leftOut(" Sewa (3 rumah)",    22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "|" << leftOut(" Sewa (4 rumah)",    22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "|" << leftOut(" Sewa (Hotel)",      22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "+--------------------------------+\n";
-    cout << "|" << leftOut(" Harga Rumah", 22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "|" << leftOut(" Harga Hotel", 22) << " :" << leftOut(" MXXX", 8) << "|\n";
-    cout << "+================================+\n";
-    cout << "|" << leftOut(" Status : STATUS (PEMAIN X)", 32) << "|\n";
-    cout << "+================================+\n";
-    cout << reset;
+    auto mval = [](int v) { return "M" + to_string(v); };
+    auto row = [&](string label, string val) {
+        cout << color << "|" << reset
+             << leftOut(" " + label, 22) << " :"
+             << color << leftOut(" " + val, 8) << "|" << reset << "\n";
+    };
+
+    string header = "[" + t.getColorGroup() + "] " + t.getTileName() + " (" + t.getTileCode() + ")";
+    if ((int)header.size() > 32) header = header.substr(0, 32);
+
+    cout << color << "+================================+" << reset << "\n";
+    cout << color << "|" << reset << centerOut("AKTA KEPEMILIKAN", 32) << color << "|" << reset << "\n";
+    cout << color << "|" << reset << centerOut(header, 32)             << color << "|" << reset << "\n";
+    cout << color << "+================================+" << reset << "\n";
+    row("Harga Beli",  mval(t.getBuyPrice()));
+    row("Nilai Gadai", mval(t.getMortgageValue()));
+    cout << color << "+--------------------------------+" << reset << "\n";
+    vector<string> labels = {"Sewa (unimproved)","Sewa (1 rumah)","Sewa (2 rumah)",
+                              "Sewa (3 rumah)","Sewa (4 rumah)","Sewa (Hotel)"};
+    vector<int> rents = t.getRentPrice();
+    for (int i = 0; i < (int)labels.size() && i < (int)rents.size(); i++)
+        row(labels[i], mval(rents[i]));
+    cout << color << "+--------------------------------+" << reset << "\n";
+    row("Harga Rumah", mval(t.getHouseCost()));
+    row("Harga Hotel", mval(t.getHotelCost()));
+    cout << color << "+================================+" << reset << "\n";
+    string owner_str  = t.getTileOwner() ? t.getTileOwner()->getUsername() : "BANK";
+    string status_str = t.isMortgage() ? "DIGADAI" : "AKTIF";
+    cout << color << "|" << reset
+         << leftOut(" Status: " + status_str + " (" + owner_str + ")", 32)
+         << color << "|" << reset << "\n";
+    cout << color << "+================================+" << reset << "\n";
 }
 
 void OutputFormatter::printProperty(Player &p, Board &b){
@@ -373,31 +383,29 @@ void OutputFormatter::printWin(vector<Player> &ps, bool is_bankruptcy){
     if(!is_bankruptcy){
         cout << "Rekap pemain:\n\n";
         for(auto& p : ps){
-            cout << yellow << p.getUsername() << reset << "\n"; //TODO: adjust method name
-            cout << leftOut("Uang", 10)     << ": M" << p.getBalance()              << "\n"; //TODO: adjust
+            cout << yellow << p.getUsername() << reset << "\n";
+            cout << leftOut("Uang",     10) << ": M" << p.getBalance()               << "\n";
             cout << leftOut("Properti", 10) << ": "  << p.getOwnedProperties().size() << "\n";
+            cout << leftOut("Net Worth",10) << ": M" << p.getNetWorth()               << "\n";
             cout << "\n";
         }
     } else {
         cout << "Pemain tersisa:\n";
         for(auto& p : ps)
-            cout << "  - " << p.getUsername() << "\n"; //TODO: adjust method name
+            cout << "  - " << p.getUsername() << "\n";
         cout << "\n";
     }
 
     // ── DETERMINE WINNER(S) ──────────────────────────────────────────────────
-    // winner = player(s) with highest net worth (balance + property values)
-    // TODO: replace getBalance() + calculateNetWorth() with actual method names
     int max_worth = 0;
     for(auto& p : ps){
-        int worth = p.getBalance(); //TODO: + p.calculateNetWorth() when available
+        int worth = p.getNetWorth();
         if(worth > max_worth) max_worth = worth;
     }
 
     vector<string> winners;
     for(auto& p : ps){
-        int worth = p.getBalance(); //TODO: same as above
-        if(worth == max_worth) winners.push_back(p.getUsername()); //TODO: adjust method name
+        if(p.getNetWorth() == max_worth) winners.push_back(p.getUsername());
     }
 
     // ── WINNER DISPLAY ────────────────────────────────────────────────────────
@@ -413,3 +421,20 @@ void OutputFormatter::printWin(vector<Player> &ps, bool is_bankruptcy){
     cout << sep << reset << "\n";
 }
 
+void OutputFormatter::printPlayerStatus(Player &p) {
+    cout << yellow << "=== Status Pemain: " << p.getUsername() << " ===" << reset << "\n";
+    cout << leftOut("Saldo",    12) << ": M" << p.getBalance() << "\n";
+    cout << leftOut("Status",   12) << ": "  << p.getStatus()  << "\n";
+    cout << leftOut("Properti", 12) << ": "  << p.getOwnedProperties().size() << " petak\n";
+    cout << leftOut("Net Worth", 12) << ": M" << p.getNetWorth() << "\n";
+    if (p.getHandSize() > 0) {
+        cout << leftOut("Kartu Kemampuan", 12) << ": " << p.getHandSize() << " kartu\n";
+    }
+    cout << "\n";
+}
+
+void OutputFormatter::printAuction() {
+    cout << yellow << "+================================+" << reset << "\n";
+    cout << yellow << "|" << reset << centerOut("PROSES LELANG", 32) << yellow << "|" << reset << "\n";
+    cout << yellow << "+================================+" << reset << "\n";
+}

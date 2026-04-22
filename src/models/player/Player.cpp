@@ -59,7 +59,8 @@ Player::Player(std::string username)
       status("ACTIVE"),
       skill_used(false),
       discount_active(0.0F),
-      shield_active(false) {}
+      shield_active(false),
+      hand_cards() {}
 
 std::string Player::getUsername() { return username; }
 int Player::getCurrTile() { return curr_tile; }
@@ -130,4 +131,21 @@ void Player::clearTurnModifiers()
 int Player::getNetWorth()
 {
     return calculateNetWorth();
+}
+
+std::vector<SpecialPowerCard *> Player::getHandCards() const { return hand_cards; }
+int Player::getHandSize() const { return static_cast<int>(hand_cards.size()); }
+SpecialPowerCard *Player::getHandCard(int index) const {
+    if (index < 0 || index >= static_cast<int>(hand_cards.size())) return nullptr;
+    return hand_cards[index];
+}
+
+void Player::addHandCard(SpecialPowerCard *card) {
+    if (card) hand_cards.push_back(card);
+}
+
+bool Player::removeHandCard(int index) {
+    if (index < 0 || index >= static_cast<int>(hand_cards.size())) return false;
+    hand_cards.erase(hand_cards.begin() + index);
+    return true;
 }

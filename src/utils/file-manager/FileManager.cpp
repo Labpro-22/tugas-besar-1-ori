@@ -1,4 +1,5 @@
 #include "include/utils/file-manager/FileManager.hpp"
+#include "include/core/GameConfig.hpp"
 
 #include <fstream>
 #include <map>
@@ -367,15 +368,15 @@ std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
         std::string id = code + std::to_string(pos);
 
         Tile* tile = nullptr;
-        if      (type == "START")           tile = new StartTile(code, id, name, "SPESIAL");
-        else if (type == "JAIL")            tile = new JailTile(code, id, name, "SPESIAL");
-        else if (type == "GO_JAIL")         tile = new GoJailTile(code, id, name, "SPESIAL");
-        else if (type == "FREE_PARKING")    tile = new FreeParkingTile(code, id, name, "SPESIAL");
+        if      (type == "START")           tile = new StartTile(code, id, name, "START");
+        else if (type == "JAIL")            tile = new JailTile(code, id, name, "JAIL");
+        else if (type == "GO_JAIL")         tile = new GoJailTile(code, id, name, "GO_JAIL");
+        else if (type == "FREE_PARKING")    tile = new FreeParkingTile(code, id, name, "FREE_PARKING");
         else if (type == "FESTIVAL")        tile = new FestivalTile(code, id, name, "FESTIVAL");
-        else if (type == "CHANCE")          tile = new ChanceTile(code, id, name, "KARTU");
-        else if (type == "COMMUNITY_CHEST") tile = new CommunityChestTile(code, id, name, "KARTU");
-        else if (type == "TAX_PPH")         tile = new TaxTile(code, id, name, "PAJAK");
-        else if (type == "TAX_PBM")         tile = new TaxTile(code, id, name, "PAJAK");
+        else if (type == "CHANCE")          tile = new ChanceTile(code, id, name, "CHANCE");
+        else if (type == "COMMUNITY_CHEST") tile = new CommunityChestTile(code, id, name, "COMMUNITY_CHEST");
+        else if (type == "TAX_PPH")         tile = new TaxTile(code, id, name, "TAX_PPH");
+        else if (type == "TAX_PBM")         tile = new TaxTile(code, id, name, "TAX_PBM");
         else if (type == "STREET" || type == "RAILROAD" || type == "UTILITY")
                                             tile = makeProp(code, name);
         else                                tile = new Tile(code, id, name, type);
@@ -404,4 +405,77 @@ void FileManager::loadMiscConfig(const std::string &configDir,
         iss >> outMaxTurn >> outInitBalance;
         return;
     }
+}
+
+// ── loadGameConfig ────────────────────────────────────────────────────────────
+GameConfig FileManager::loadGameConfig(const std::string &configDir)
+{
+    int go_salary = 200, jail_fine = 50;
+    int pph_flat = 150, pph_percentage = 10, pbm_flat = 200;
+    int max_turn = 15, initial_balance = 1500;
+    std::map<int, int> railroad_rent;
+    std::map<int, int> utility_multiplier;
+
+    auto readFile = [&](const std::string &name) -> std::ifstream {
+        return std::ifstream(configDir + name);
+    };
+
+    // special.txt: GO_SALARY  JAIL_FINE
+    {
+        auto f = readFile("special.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            iss >> go_salary >> jail_fine;
+            break;
+        }
+    }
+    // railroad.txt: COUNT  RENT
+    {
+        auto f = readFile("railroad.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            int cnt, rent;
+            if (iss >> cnt >> rent) railroad_rent[cnt] = rent;
+        }
+    }
+    // utility.txt: COUNT  MULTIPLIER
+    {
+        auto f = readFile("utility.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            int cnt, mult;
+            if (iss >> cnt >> mult) utility_multiplier[cnt] = mult;
+        }
+    }
+    // tax.txt: PPH_FLAT  PPH_PERCENTAGE  PBM_FLAT
+    {
+        auto f = readFile("tax.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            iss >> pph_flat >> pph_percentage >> pbm_flat;
+            break;
+        }
+    }
+    // misc.txt: MAX_TURN  SALDO_AWAL
+    {
+        auto f = readFile("misc.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            iss >> max_turn >> initial_balance;
+            break;
+        }
+    }
+
+    return GameConfig(go_salary, jail_fine, pph_flat, pph_percentage, pbm_flat,
+                      max_turn, initial_balance, railroad_rent, utility_multiplier);
 }
