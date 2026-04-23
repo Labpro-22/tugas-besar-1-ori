@@ -345,11 +345,102 @@ std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
         );
     };
 
-    // --- 2. Parse board.txt → ordered tile list ---
+    // --- 2a. Try aksi.txt + property.txt first (Revisi 2 spec). ---
+    // aksi.txt columns: ID KODE NAMA JENIS_PETAK WARNA
+    // We map JENIS_PETAK → internal type strings.
+    struct AksiData { std::string code, name, jenis; };
+    std::map<int, AksiData> aksiByPos;
+    {
+        std::ifstream af(configDir + "aksi.txt");
+        if (af.is_open()) {
+            std::string line;
+            while (std::getline(af, line)) {
+                if (line.empty() || line[0] == '#') continue;
+                std::istringstream iss(line);
+                int pos; std::string code, name, jenis, warna;
+                if (!(iss >> pos >> code >> name >> jenis >> warna)) continue;
+                aksiByPos[pos] = {code, name, jenis};
+            }
+        }
+    }
+
+    // Helper: convert JENIS_PETAK + KODE to internal type
+    auto aksiInternalType = [](const std::string &jenis, const std::string &kode) -> std::string {
+        if (jenis == "SPESIAL") {
+            if (kode == "GO")  return "START";
+            if (kode == "PEN") return "JAIL";
+            if (kode == "BBP") return "FREE_PARKING";
+            if (kode == "PPJ") return "GO_JAIL";
+        } else if (jenis == "KARTU") {
+            if (kode == "DNU") return "COMMUNITY_CHEST";
+            if (kode == "KSP") return "CHANCE";
+        } else if (jenis == "PAJAK") {
+            if (kode == "PPH") return "TAX_PPH";
+            if (kode == "PBM") return "TAX_PBM";
+        } else if (jenis == "FESTIVAL") {
+            return "FESTIVAL";
+        }
+        return "UNKNOWN";
+    };
+
     std::vector<Tile*> tiles;
+
+    // If aksi.txt was loaded successfully (has entries), build from aksi+property
+    if (!aksiByPos.empty()) {
+        // Determine total positions from aksi.txt + property.txt
+        int maxPos = 0;
+        for (const auto &[pos, _] : aksiByPos) if (pos > maxPos) maxPos = pos;
+        for (const auto &[code, d] : props) (void)d, (void)code; // props uses code as key; we need positions from property.txt itself
+
+        // Re-parse property.txt to get positions
+        struct PropPos { int pos; std::string code; };
+        std::vector<PropPos> propPositions;
+        {
+            std::ifstream pf(configDir + "property.txt");
+            std::string line;
+            while (std::getline(pf, line)) {
+                if (line.empty() || line[0] == '#') continue;
+                std::istringstream iss(line);
+                int id; std::string code;
+                if (!(iss >> id >> code)) continue;
+                propPositions.push_back({id, code});
+                if (id > maxPos) maxPos = id;
+            }
+        }
+
+        // Build tile array indexed 1..maxPos
+        std::map<int, Tile*> byPos;
+        for (const auto &[pos, ad] : aksiByPos) {
+            std::string internalType = aksiInternalType(ad.jenis, ad.code);
+            std::string id = ad.code + std::to_string(pos);
+            Tile *tile = nullptr;
+            if      (internalType == "START")           tile = new StartTile(ad.code, id, ad.name, "START");
+            else if (internalType == "JAIL")            tile = new JailTile(ad.code, id, ad.name, "JAIL");
+            else if (internalType == "GO_JAIL")         tile = new GoJailTile(ad.code, id, ad.name, "GO_JAIL");
+            else if (internalType == "FREE_PARKING")    tile = new FreeParkingTile(ad.code, id, ad.name, "FREE_PARKING");
+            else if (internalType == "FESTIVAL")        tile = new FestivalTile(ad.code, id, ad.name, "FESTIVAL");
+            else if (internalType == "CHANCE")          tile = new ChanceTile(ad.code, id, ad.name, "CHANCE");
+            else if (internalType == "COMMUNITY_CHEST") tile = new CommunityChestTile(ad.code, id, ad.name, "COMMUNITY_CHEST");
+            else if (internalType == "TAX_PPH")         tile = new TaxTile(ad.code, id, ad.name, "TAX_PPH");
+            else if (internalType == "TAX_PBM")         tile = new TaxTile(ad.code, id, ad.name, "TAX_PBM");
+            else                                        tile = new Tile(ad.code, id, ad.name, internalType);
+            byPos[pos] = tile;
+        }
+        for (const auto &pp : propPositions) {
+            byPos[pp.pos] = makeProp(pp.code, pp.code);
+        }
+
+        for (int i = 1; i <= maxPos; i++) {
+            auto it = byPos.find(i);
+            if (it != byPos.end()) tiles.push_back(it->second);
+        }
+        if (!tiles.empty()) return tiles;
+    }
+
+    // --- 2b. Fallback: board.txt (legacy) ---
     std::ifstream bf(configDir + "board.txt");
     if (!bf.is_open())
-        throw SaveLoadException("Gagal membuka board.txt di: " + configDir);
+        throw SaveLoadException("Gagal membuka aksi.txt atau board.txt di: " + configDir);
 
     std::string line;
     int expectedPos = 1;
@@ -393,7 +484,7 @@ void FileManager::loadMiscConfig(const std::string &configDir,
                                  int &outMaxTurn, int &outInitBalance)
 {
     outMaxTurn     = 15;
-    outInitBalance = 1500;
+    outInitBalance = 1000;
 
     std::ifstream file(configDir + "misc.txt");
     if (!file.is_open()) return;
@@ -412,7 +503,7 @@ GameConfig FileManager::loadGameConfig(const std::string &configDir)
 {
     int go_salary = 200, jail_fine = 50;
     int pph_flat = 150, pph_percentage = 10, pbm_flat = 200;
-    int max_turn = 15, initial_balance = 1500;
+    int max_turn = 15, initial_balance = 1000;
     std::map<int, int> railroad_rent;
     std::map<int, int> utility_multiplier;
 

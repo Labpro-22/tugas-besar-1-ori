@@ -96,6 +96,11 @@ private:
     void    autoPayRent(Player &p, PropertyTile &prop);
     void    recoverForRent(Player &p, PropertyTile &prop);
     void    interactiveLelang(Player *seller, PropertyTile &prop, std::vector<Player*> &participants);
+    int     computeRent(PropertyTile &prop, int diceTotal) const;
+    int     countRailroadsOwnedBy(Player *owner) const;
+    int     countUtilitiesOwnedBy(Player *owner) const;
+    void    recomputeMonopolyForGroup(const std::string &colorGroup);
+    void    drawSkillCardAtTurnStart(Player &p);
     bool    game_over_by_bankruptcy = false;
 
 protected:

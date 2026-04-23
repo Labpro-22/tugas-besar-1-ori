@@ -27,12 +27,27 @@ int PropertyTile::calculateRent() const
     }
 
     int rent_value = rent_price[bounded_level];
+
+    if (getTileType() == "STREET" && level == 0 && monopolized)
+    {
+        rent_value *= 2;
+    }
+
     if (festival_duration > 0)
     {
         rent_value *= std::max(1, festival_multiplier);
     }
 
     return rent_value;
+}
+
+int PropertyTile::applyFestival(int base_rent) const
+{
+    if (festival_duration > 0)
+    {
+        base_rent *= std::max(1, festival_multiplier);
+    }
+    return base_rent;
 }
 
 bool PropertyTile::isMortgage() const

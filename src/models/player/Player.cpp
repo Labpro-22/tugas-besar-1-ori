@@ -27,13 +27,20 @@ int Player::calculateNetWorth()
             continue;
         }
 
-        if (property->isMortgage())
+        net_worth += property->getBuyPrice();
+
+        if (property->getTileType() == "STREET")
         {
-            net_worth += property->getMortgageValue();
-        }
-        else
-        {
-            net_worth += property->getBuyPrice();
+            int lvl = property->getLevel();
+            if (lvl > 0)
+            {
+                int houses = (lvl >= 5) ? 4 : lvl;
+                net_worth += static_cast<long long>(houses) * property->getHouseCost();
+                if (lvl >= 5)
+                {
+                    net_worth += property->getHotelCost();
+                }
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 #include "OutputFormatter.hpp"
 #include "../../include/models/tiles/PropertyTile.hpp"
+#include <climits>
 #include <vector>
 #include <map>
 #include <iostream>
@@ -398,17 +399,31 @@ void OutputFormatter::printWin(vector<Player> &ps, bool is_bankruptcy){
         cout << "\n";
     }
 
-    // ── DETERMINE WINNER(S) ──────────────────────────────────────────────────
-    int max_worth = 0;
-    for(auto& p : ps){
-        int worth = p.getNetWorth();
-        if(worth > max_worth) max_worth = worth;
-    }
+    // ── DETERMINE WINNER(S) — tie-break: money → properties → cards ─────────
+    auto activeOnly = [&]() {
+        vector<Player*> v;
+        for (auto &p : ps) if (p.getStatus() != "BANKRUPT") v.push_back(&p);
+        return v;
+    };
+    vector<Player*> candidates = activeOnly();
+    if (candidates.empty()) for (auto &p : ps) candidates.push_back(&p);
+
+    auto filterMaxBy = [&](vector<Player*> &v, auto getter) {
+        int best = INT_MIN;
+        for (auto *p : v) { int x = getter(p); if (x > best) best = x; }
+        vector<Player*> out;
+        for (auto *p : v) if (getter(p) == best) out.push_back(p);
+        v = out;
+    };
+
+    filterMaxBy(candidates, [](Player *p){ return p->getBalance(); });
+    if (candidates.size() > 1)
+        filterMaxBy(candidates, [](Player *p){ return static_cast<int>(p->getOwnedProperties().size()); });
+    if (candidates.size() > 1)
+        filterMaxBy(candidates, [](Player *p){ return p->getHandSize(); });
 
     vector<string> winners;
-    for(auto& p : ps){
-        if(p.getNetWorth() == max_worth) winners.push_back(p.getUsername());
-    }
+    for (auto *p : candidates) winners.push_back(p->getUsername());
 
     // ── WINNER DISPLAY ────────────────────────────────────────────────────────
     cout << yellow << sep << "\n";

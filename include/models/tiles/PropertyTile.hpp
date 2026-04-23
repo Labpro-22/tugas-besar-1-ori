@@ -30,6 +30,7 @@ public:
         int upgrade_hotel_cost, int festival_multiplier, int festival_duration);
 
     int calculateRent() const;
+    int applyFestival(int base_rent) const;
     bool isMortgage() const;
     bool isMonopolized() const;
 
