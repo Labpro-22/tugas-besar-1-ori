@@ -3,6 +3,7 @@
 
 #include "../Screen.hpp"
 #include "../components/Button.hpp"
+#include "config/GameConfig.hpp"
 #include "raylib.h"
 #include <vector>
 
@@ -25,8 +26,14 @@ private:
 
     float globalScale;
 
+    GameConfig* gameConfig;
+    int activeNameField;
+    int nameCursorPos[GameConfig::MAX_PLAYERS];
+
+    Rectangle nameFields[GameConfig::MAX_PLAYERS];
+
 public:
-    NewGameScreen();
+    NewGameScreen(GameConfig& config);
     void loadAssets() override;
     void unloadAssets() override;
     void update(float dt) override;

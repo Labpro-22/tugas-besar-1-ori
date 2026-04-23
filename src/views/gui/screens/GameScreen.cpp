@@ -1,36 +1,124 @@
 #include "GameScreen.hpp"
-#include <cmath>
-#include <cstdlib>
+#include <algorithm>
 
-GameScreen::GameScreen()
-    : bgTexture{}, boardTexture{}, cardTex{},
-      currentPlayerIdx(0), die1(1), die2(1), diceRolled(false),
-      turnCount(1), maxTurn(15), boardScale(1.0f), boardX(0), boardY(0), globalScale(1.0f) {
-    for (int i = 0; i < 6; i++) {
-        diceFaces[i] = {};
-        playerIcons[i] = {};
+static const float CORNER_RATIO = 0.135f;
+
+static void getGridRC(int i, int& row, int& col) {
+    if (i == 0)        { row = 10; col = 10; }
+    else if (i <= 9)   { row = 10; col = 10 - i; }
+    else if (i == 10)  { row = 10; col = 0; }
+    else if (i <= 19)  { row = 20 - i; col = 0; }
+    else if (i == 20)  { row = 0; col = 0; }
+    else if (i <= 29)  { row = 0; col = i - 20; }
+    else if (i == 30)  { row = 0; col = 10; }
+    else               { row = i - 30; col = 10; }
+}
+
+GameScreen::GameScreen(GameConfig& config)
+    : bgTexture{}, blurredBgTexture{}, boardTexture{}, cardPanel{},
+      activeTab(0), currentPlayerIdx(0), numPlayers(config.playerCount),
+      dice1(1), dice2(1), diceRolling(false), diceRollTimer(0), diceRollInterval(0.08f), diceRollFrame(0),
+      hasRolled(false), turnEnded(false),
+      globalScale(1.0f), boardX(0), boardY(0), boardScale(1.0f),
+      cornerRatio(CORNER_RATIO),
+      gameConfig(&config) {
+    for (int i = 0; i < 6; i++) playerIcons[i] = {};
+    for (int i = 0; i < 6; i++) diceTextures[i] = {};
+    for (int i = 0; i < 40; i++) { tileCenters[i][0] = 0; tileCenters[i][1] = 0; }
+}
+
+void GameScreen::computeLayout() {
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+    globalScale = std::min(sw / 1280.0f, sh / 720.0f);
+
+    float maxH = sh * 0.96f;
+    float maxW = sw * 0.55f;
+    boardScale = std::min(maxW / (float)boardTexture.width, maxH / (float)boardTexture.height);
+    boardX = sw * 0.02f;
+    boardY = (sh - boardTexture.height * boardScale) / 2.0f;
+
+    float bw = boardTexture.width * boardScale;
+    float bh = boardTexture.height * boardScale;
+    float cornerSz = bw * cornerRatio;
+    float sideSz = (bw - 2.0f * cornerSz) / 9.0f;
+    float cornerSzh = bh * cornerRatio;
+    float sideSzh = (bh - 2.0f * cornerSzh) / 9.0f;
+
+    for (int i = 0; i < 40; i++) {
+        int row, col;
+        getGridRC(i, row, col);
+
+        float cx, cy;
+        if (col == 0)      cx = boardX + cornerSz / 2.0f;
+        else if (col == 10) cx = boardX + bw - cornerSz / 2.0f;
+        else                cx = boardX + cornerSz + (col - 1) * sideSz + sideSz / 2.0f;
+
+        if (row == 0)        cy = boardY + cornerSzh / 2.0f;
+        else if (row == 10)  cy = boardY + bh - cornerSzh / 2.0f;
+        else                 cy = boardY + cornerSzh + (row - 1) * sideSzh + sideSzh / 2.0f;
+
+        tileCenters[i][0] = cx;
+        tileCenters[i][1] = cy;
     }
-    players = {
-        {"nus", 1500, 0, RED},
-        {"jo", 1500, 0, BLUE},
-        {"bot", 1400, 0, GREEN}
-    };
-    logMessages.push_back("[Turn 1] Game started!");
-    logMessages.push_back("[Turn 1] nus rolled 4+3=7");
-    logMessages.push_back("[Turn 1] nus landed on Bandung");
+
+    float boardRight = boardX + boardTexture.width * boardScale;
+    float availW = sw - boardRight - 10.0f;
+    float cardScale = std::min(availW / (float)cardPanel.width, (sh - 40.0f) / (float)cardPanel.height);
+    if (cardScale < 0.1f) cardScale = 0.1f;
+    float cardX = boardRight + (availW - cardPanel.width * cardScale) * 0.65f;
+    float cardY = (sh - cardPanel.height * cardScale) / 2.0f;
+
+    float panelCenterX = cardX + cardPanel.width * cardScale / 2.0f;
+    float btnW = cardPanel.width * cardScale * 0.22f;
+    float btnH = 35.0f * globalScale;
+    float btnSpacing = 4.0f * globalScale;
+    float totalBtnW = 4.0f * btnW + 3.0f * btnSpacing;
+    float btnStartX = panelCenterX - totalBtnW / 1.94f;
+    float btnY = cardY + cardPanel.height * cardScale * 0.265f;
+
+    btnPlay.loadAsText("PLAY", btnStartX, btnY, btnW, btnH);
+    btnAssets.loadAsText("ASSETS", btnStartX + btnW + btnSpacing, btnY, btnW, btnH);
+    btnPlayers.loadAsText("PLAYERS", btnStartX + 2.0f * (btnW + btnSpacing), btnY, btnW, btnH);
+    btnLog.loadAsText("LOG", btnStartX + 3.0f * (btnW + btnSpacing), btnY, btnW, btnH);
+    btnPlay.setActive(activeTab == 0);
+    btnAssets.setActive(activeTab == 1);
+    btnPlayers.setActive(activeTab == 2);
+    btnLog.setActive(activeTab == 3);
+
+    float iconSz = cardPanel.width * cardScale * 0.15f;
+    float iconYPos = btnPlay.getY() + btnPlay.getHeight() - 198.0f * globalScale;
+    float playerNameBottom = iconYPos + iconSz + 10.0f * globalScale;
+
+    float diceSz = cardPanel.width * cardScale * 0.10f;
+    float diceY = playerNameBottom + 18.0f * globalScale;
+
+    float actionBtnW = cardPanel.width * cardScale * 0.2f;
+    float actionBtnH = diceSz * 0.85f;
+    float rowGap = 10.0f * globalScale;
+
+    float totalRowW = diceSz + diceSz + rowGap + actionBtnW + rowGap + actionBtnW;
+    float rowStartX = cardX + (cardPanel.width * cardScale - totalRowW) / 2.0f;
+    float actionBtnY = diceY + (diceSz - actionBtnH) / 2.0f;
+
+    float dice1X = rowStartX;
+    float dice2X = dice1X + diceSz + rowGap;
+    float rollBtnX = dice2X + diceSz + rowGap;
+    float endTurnBtnX = rollBtnX + actionBtnW + rowGap;
+
+    btnRollDice.loadAsText("ROLL", rollBtnX, actionBtnY, actionBtnW, actionBtnH);
+    btnEndTurn.loadAsText("END TURN", endTurnBtnX, actionBtnY, actionBtnW, actionBtnH);
 }
 
 void GameScreen::loadAssets() {
     bgTexture = LoadTexture("assets/page_background.png");
-    boardTexture = LoadTexture("assets/board.png");
-    cardTex = LoadTexture("assets/card1.png");
+    Image bgImg = LoadImage("assets/page_background.png");
+    ImageBlurGaussian(&bgImg, 10);
+    blurredBgTexture = LoadTextureFromImage(bgImg);
+    UnloadImage(bgImg);
 
-    diceFaces[0] = LoadTexture("assets/assets1/dice-1-export 1.png");
-    diceFaces[1] = LoadTexture("assets/assets1/dice-2-export 1.png");
-    diceFaces[2] = LoadTexture("assets/assets1/dice-3-export 1.png");
-    diceFaces[3] = LoadTexture("assets/assets1/dice-4-export 1.png");
-    diceFaces[4] = LoadTexture("assets/assets1/dice-5-export 1.png");
-    diceFaces[5] = LoadTexture("assets/assets1/dice-6-export 1.png");
+    boardTexture = LoadTexture("assets/board.png");
+    cardPanel = LoadTexture("assets/menu/menu_back.png");
 
     playerIcons[0] = LoadTexture("assets/assets1/icon-1.png");
     playerIcons[1] = LoadTexture("assets/assets1/icon-2.png");
@@ -39,237 +127,152 @@ void GameScreen::loadAssets() {
     playerIcons[4] = LoadTexture("assets/assets1/icon-5.png");
     playerIcons[5] = LoadTexture("assets/assets1/icon-6.png");
 
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-    globalScale = std::min(sw / 1280.0f, sh / 720.0f);
+    diceTextures[0] = LoadTexture("assets/assets1/dice-1-export 1.png");
+    diceTextures[1] = LoadTexture("assets/assets1/dice-2-export 1.png");
+    diceTextures[2] = LoadTexture("assets/assets1/dice-3-export 1.png");
+    diceTextures[3] = LoadTexture("assets/assets1/dice-4-export 1.png");
+    diceTextures[4] = LoadTexture("assets/assets1/dice-5-export 1.png");
+    diceTextures[5] = LoadTexture("assets/assets1/dice-6-export 1.png");
 
-    computeBoardLayout();
-
-    float btnScale = globalScale * 0.25f;
-    btnSettings.load("assets/settings/dice-6-export 2.png", sw - 80 * globalScale, 10 * globalScale, btnScale);
-    btnRollDice.load("assets/settings/dice-6-export 3.png", sw * 0.72f, sh * 0.55f, btnScale * 1.5f);
-    btnEndTurn.load("assets/new-game-page/start 2.png", sw * 0.72f, sh * 0.72f, btnScale);
+    computeLayout();
 }
 
 void GameScreen::unloadAssets() {
     UnloadTexture(bgTexture);
+    UnloadTexture(blurredBgTexture);
     UnloadTexture(boardTexture);
-    for (int i = 0; i < 6; i++) {
-        UnloadTexture(diceFaces[i]);
-        UnloadTexture(playerIcons[i]);
-    }
-    UnloadTexture(cardTex);
-    btnSettings.unload();
+    UnloadTexture(cardPanel);
+    for (int i = 0; i < 6; i++) UnloadTexture(playerIcons[i]);
+    for (int i = 0; i < 6; i++) UnloadTexture(diceTextures[i]);
+    btnPlay.unload();
+    btnAssets.unload();
+    btnPlayers.unload();
+    btnLog.unload();
     btnRollDice.unload();
     btnEndTurn.unload();
 }
 
-void GameScreen::computeBoardLayout() {
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-
-    float maxBoardH = sh * 0.88f;
-    float maxBoardW = sw * 0.60f;
-    boardScale = std::min(maxBoardW / boardTexture.width, maxBoardH / boardTexture.height);
-    boardX = 20 * globalScale;
-    boardY = (sh - boardTexture.height * boardScale) / 2.0f;
-}
-
-Vector2 GameScreen::getTilePosition(int tileIndex) {
-    int totalTiles = 40;
-    float w = boardTexture.width * boardScale;
-    float h = boardTexture.height * boardScale;
-    float side = w;
-    float perSide = totalTiles / 4.0f;
-
-    float normX = boardX;
-    float normY = boardY;
-
-    if (tileIndex >= 0 && tileIndex <= 10) {
-        float t = tileIndex / perSide;
-        return {normX + side * (1.0f - t), normY + h};
-    } else if (tileIndex > 10 && tileIndex <= 20) {
-        float t = (tileIndex - 10) / perSide;
-        return {normX, normY + h * (1.0f - t)};
-    } else if (tileIndex > 20 && tileIndex <= 30) {
-        float t = (tileIndex - 20) / perSide;
-        return {normX + side * t, normY};
-    } else {
-        float t = (tileIndex - 30) / perSide;
-        return {normX + side, normY + h * t};
-    }
-}
-
 void GameScreen::update(float dt) {
     (void)dt;
+    if (btnPlay.isClicked()) activeTab = 0;
+    if (btnAssets.isClicked()) activeTab = 1;
+    if (btnPlayers.isClicked()) activeTab = 2;
+    if (btnLog.isClicked()) activeTab = 3;
 
-    if (btnSettings.isClicked()) {
-        nextScreen = AppScreen::SETTINGS;
-        shouldChangeScreen = true;
-        return;
-    }
-
-    if (btnRollDice.isClicked()) {
-        die1 = 1 + rand() % 6;
-        die2 = 1 + rand() % 6;
-        diceRolled = true;
-        int total = die1 + die2;
-        MockPlayer& p = players[currentPlayerIdx];
-        p.tileIndex = (p.tileIndex + total) % 40;
-        logMessages.push_back(TextFormat("[Turn %d] %s rolled %d+%d=%d", turnCount,
-                                          p.name.c_str(), die1, die2, total));
-        logMessages.push_back(TextFormat("[Turn %d] %s landed on tile %d", turnCount,
-                                          p.name.c_str(), p.tileIndex));
-        if (logMessages.size() > 20) {
-            logMessages.erase(logMessages.begin());
-        }
-    } else if (btnEndTurn.isClicked()) {
-        diceRolled = false;
-        currentPlayerIdx = (currentPlayerIdx + 1) % players.size();
-        if (currentPlayerIdx == 0) turnCount++;
-    }
+    btnPlay.setActive(activeTab == 0);
+    btnAssets.setActive(activeTab == 1);
+    btnPlayers.setActive(activeTab == 2);
+    btnLog.setActive(activeTab == 3);
 
     if (IsKeyPressed(KEY_ESCAPE)) {
         nextScreen = AppScreen::HOME;
         shouldChangeScreen = true;
-        return;
     }
 
-    if (IsWindowResized()) {
-        unloadAssets();
-        loadAssets();
+    if (diceRolling) {
+        diceRollTimer += dt;
+        if (diceRollTimer >= diceRollInterval) {
+            diceRollTimer = 0;
+            diceRollFrame++;
+            dice1 = GetRandomValue(1, 6);
+            dice2 = GetRandomValue(1, 6);
+            if (diceRollFrame >= 12) {
+                diceRolling = false;
+                diceRollFrame = 0;
+                hasRolled = true;
+            }
+        }
     }
+
+    if (btnRollDice.isClicked() && !diceRolling && !hasRolled) {
+        diceRolling = true;
+        diceRollTimer = 0;
+        diceRollFrame = 0;
+        diceRollInterval = 0.06f;
+    }
+
+    if (btnEndTurn.isClicked() && hasRolled && !diceRolling) {
+        turnEnded = true;
+        hasRolled = false;
+        currentPlayerIdx = (currentPlayerIdx + 1) % numPlayers;
+        turnEnded = false;
+    }
+
+    if (IsWindowResized()) computeLayout();
 }
 
 void GameScreen::draw() {
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
 
-    float bgScale = std::max(sw / (float)bgTexture.width, sh / (float)bgTexture.height);
-    float bgX = (sw - bgTexture.width * bgScale) / 2.0f;
-    float bgY = (sh - bgTexture.height * bgScale) / 2.0f;
-    DrawTextureEx(bgTexture, {bgX, bgY}, 0.0f, bgScale, WHITE);
+    float bgScale = std::max(sw / (float)blurredBgTexture.width, sh / (float)blurredBgTexture.height);
+    float bgX = (sw - blurredBgTexture.width * bgScale) / 2.0f;
+    float bgY = (sh - blurredBgTexture.height * bgScale) / 2.0f;
+    DrawTextureEx(blurredBgTexture, {bgX, bgY}, 0.0f, bgScale, WHITE);
 
     DrawTextureEx(boardTexture, {boardX, boardY}, 0.0f, boardScale, WHITE);
 
-    drawPlayerTokens();
-    drawHUD();
-    drawLogPanel();
+    float iconScale = globalScale * 0.06f;
+    int boardNameSize = static_cast<int>(8 * globalScale);
+    for (int i = 0; i < numPlayers; i++) {
+        float cx = tileCenters[i][0];
+        float cy = tileCenters[i][1];
+        float iw = playerIcons[i].width * iconScale;
+        float ih = playerIcons[i].height * iconScale;
+        float dx = cx - iw / 2.0f + (i % 3 - 1) * iw * 0.5f;
+        float dy = cy - ih / 2.0f + (i / 3 - 0.5f) * ih * 0.4f;
+        DrawTextureEx(playerIcons[i], {dx, dy}, 0.0f, iconScale, WHITE);
 
-    btnSettings.draw();
+        int nameW = MeasureText(gameConfig->playerNames[i], boardNameSize);
+        DrawText(gameConfig->playerNames[i],
+                 static_cast<int>(dx + (iw - nameW) / 2),
+                 static_cast<int>(dy + ih + 2),
+                 boardNameSize, WHITE);
+    }
+
+    float boardRight = boardX + boardTexture.width * boardScale;
+    float availW = sw - boardRight - 10.0f;
+    float cardScale = std::min(availW / (float)cardPanel.width, (sh - 20.0f) / (float)cardPanel.height);
+    if (cardScale < 0.1f) cardScale = 0.1f;
+    float cardX = boardRight + (availW - cardPanel.width * cardScale) * 0.65f;
+    float cardY = (sh - cardPanel.height * cardScale) / 2.0f;
+    DrawTextureEx(cardPanel, {cardX, cardY}, 0.0f, cardScale, WHITE);
+
+    btnPlay.draw();
+    btnAssets.draw();
+    btnPlayers.draw();
+    btnLog.draw();
+
+    float iconSz = cardPanel.width * cardScale * 0.15f;
+    float iconStartX = cardX + (cardPanel.width * cardScale - iconSz) - 306.0f;
+    float iconY = btnPlay.getY() + btnPlay.getHeight() - 198.0f * globalScale;
+    float iconScaleVal = iconSz / (float)playerIcons[currentPlayerIdx].width;
+    DrawRectangleRec({iconStartX - 3, iconY - 3, iconSz + 6, iconSz + 6}, {255, 235, 202, 255});
+    DrawRectangleLinesEx({iconStartX - 3, iconY - 2, iconSz + 6, iconSz + 6}, 2, {148, 73, 68, 255});
+    DrawTextureEx(playerIcons[currentPlayerIdx], {iconStartX, iconY}, 0.0f, iconScaleVal, WHITE);
+
+    float playerNameX = iconStartX + iconSz + 10.0f * globalScale;
+    float playerNameY = iconY + (iconSz - 27.0f * globalScale) / 2.0f;
+    int playerNameSize = static_cast<int>(35 * globalScale);
+    DrawText(gameConfig->playerNames[currentPlayerIdx],
+             static_cast<int>(playerNameX), static_cast<int>(playerNameY),
+             playerNameSize, BLACK);
+
+    float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
+    float diceSz = cardPanel.width * cardScale * 0.10f;
+    float diceGap = 10.0f * globalScale;
+    float diceY = playerNameBottom + 18.0f * globalScale;
+
+    float totalRowW = diceSz + diceSz + diceGap + btnRollDice.getWidth() + diceGap + btnEndTurn.getWidth();
+    float rowStartX = cardX + (cardPanel.width * cardScale - totalRowW) / 2.0f;
+
+    float d1x = rowStartX;
+    float d2x = d1x + diceSz + diceGap;
+    float dice1Sc = diceSz / (float)diceTextures[dice1 - 1].width;
+    float dice2Sc = diceSz / (float)diceTextures[dice2 - 1].width;
+    DrawTextureEx(diceTextures[dice1 - 1], {d1x, diceY}, 0.0f, dice1Sc, WHITE);
+    DrawTextureEx(diceTextures[dice2 - 1], {d2x, diceY}, 0.0f, dice2Sc, WHITE);
+
     btnRollDice.draw();
     btnEndTurn.draw();
-}
-
-void GameScreen::drawPlayerTokens() {
-    for (size_t i = 0; i < players.size(); i++) {
-        Vector2 pos = getTilePosition(players[i].tileIndex);
-        float offsetX = i * 18 * globalScale;
-        float offsetY = -10 * globalScale;
-        float iconScale = globalScale * 0.08f;
-        Texture2D icon = playerIcons[i];
-        float iw = icon.width * iconScale;
-        float ih = icon.height * iconScale;
-        float drawX = pos.x + offsetX - iw / 2;
-        float drawY = pos.y + offsetY - ih;
-        DrawTextureEx(icon, {drawX, drawY}, 0.0f, iconScale, WHITE);
-        if (i == static_cast<size_t>(currentPlayerIdx)) {
-            DrawRectangleLines(static_cast<int>(drawX - 2), static_cast<int>(drawY - 2),
-                               static_cast<int>(iw + 4), static_cast<int>(ih + 4), GOLD);
-        }
-    }
-}
-
-void GameScreen::drawHUD() {
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-
-    float panelX = sw * 0.68f;
-    float panelY = sh * 0.08f;
-    float panelW = sw * 0.30f;
-    float panelH = sh * 0.35f;
-
-    DrawRectangle(static_cast<int>(panelX), static_cast<int>(panelY),
-                  static_cast<int>(panelW), static_cast<int>(panelH),
-                  Fade(BLACK, 0.6f));
-    DrawRectangleLines(static_cast<int>(panelX), static_cast<int>(panelY),
-                       static_cast<int>(panelW), static_cast<int>(panelH),
-                       GOLD);
-
-    int fontSize = static_cast<int>(18 * globalScale);
-    int lineH = static_cast<int>(24 * globalScale);
-    int textX = static_cast<int>(panelX + 10 * globalScale);
-    int textY = static_cast<int>(panelY + 10 * globalScale);
-
-    DrawText("=== PLAYER STATUS ===", textX, textY, fontSize, GOLD);
-    textY += lineH + 5;
-
-    for (size_t i = 0; i < players.size(); i++) {
-        const MockPlayer& p = players[i];
-        Color c = (i == static_cast<size_t>(currentPlayerIdx)) ? YELLOW : WHITE;
-        float iconScale = globalScale * 0.035f;
-        Texture2D icon = playerIcons[i];
-        DrawTextureEx(icon, {static_cast<float>(textX), static_cast<float>(textY)}, 0.0f, iconScale, WHITE);
-        DrawText(TextFormat(" %s%s  M%d  Pos:%d",
-                            (i == static_cast<size_t>(currentPlayerIdx)) ? "> " : "  ",
-                            p.name.c_str(), p.money, p.tileIndex),
-                 static_cast<int>(textX + icon.width * iconScale + 4), textY, fontSize, c);
-        textY += lineH;
-    }
-
-    textY += lineH / 2;
-    DrawText(TextFormat("Turn: %d / %d", turnCount, maxTurn), textX, textY, fontSize, WHITE);
-
-    if (diceRolled) {
-        float diceScale = globalScale * 0.25f;
-        Texture2D d1 = diceFaces[die1 - 1];
-        Texture2D d2 = diceFaces[die2 - 1];
-        float d1w = d1.width * diceScale;
-        float diceY = panelY + panelH * 0.72f;
-        DrawTextureEx(d1, {panelX + panelW * 0.15f, diceY}, 0.0f, diceScale, WHITE);
-        DrawTextureEx(d2, {panelX + panelW * 0.55f, diceY}, 0.0f, diceScale, WHITE);
-        int diceFont = static_cast<int>(20 * globalScale);
-        DrawText(TextFormat("%d  %d", die1, die2),
-                 static_cast<int>(panelX + panelW * 0.35f),
-                 static_cast<int>(diceY + d1w + 5),
-                 diceFont, WHITE);
-    } else {
-        DrawText("Click Roll Dice", static_cast<int>(panelX + panelW * 0.25f),
-                 static_cast<int>(panelY + panelH * 0.85f),
-                 static_cast<int>(16 * globalScale), GRAY);
-    }
-}
-
-void GameScreen::drawLogPanel() {
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-
-    float panelX = sw * 0.68f;
-    float panelY = sh * 0.48f;
-    float panelW = sw * 0.30f;
-    float panelH = sh * 0.42f;
-
-    DrawRectangle(static_cast<int>(panelX), static_cast<int>(panelY),
-                  static_cast<int>(panelW), static_cast<int>(panelH),
-                  Fade(BLACK, 0.6f));
-    DrawRectangleLines(static_cast<int>(panelX), static_cast<int>(panelY),
-                       static_cast<int>(panelW), static_cast<int>(panelH),
-                       DARKGRAY);
-
-    int fontSize = static_cast<int>(14 * globalScale);
-    int lineH = static_cast<int>(18 * globalScale);
-    int textX = static_cast<int>(panelX + 8 * globalScale);
-    int textY = static_cast<int>(panelY + 8 * globalScale);
-
-    DrawText("--- LOG ---", textX, textY, fontSize, GRAY);
-    textY += lineH + 2;
-
-    int maxLines = static_cast<int>((panelH - 30 * globalScale) / lineH);
-    int startIdx = static_cast<int>(logMessages.size()) - maxLines;
-    if (startIdx < 0) startIdx = 0;
-
-    for (size_t i = startIdx; i < logMessages.size(); i++) {
-        DrawText(logMessages[i].c_str(), textX, textY, fontSize, LIGHTGRAY);
-        textY += lineH;
-    }
 }

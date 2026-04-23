@@ -1,12 +1,17 @@
 #include "NewGameScreen.hpp"
 #include <cmath>
+#include <cstring>
 
-NewGameScreen::NewGameScreen() : bgTexture{}, playerCountLabel{}, selectIconsLabel{},
+NewGameScreen::NewGameScreen(GameConfig& config) : bgTexture{}, playerCountLabel{}, selectIconsLabel{},
     minMaxLabel{}, counterTex{},
-    playerCount(2), iconSelected{false}, globalScale(1.0f) {
+    playerCount(2), iconSelected{false}, globalScale(1.0f),
+    gameConfig(&config), activeNameField(-1) {
     for (int i = 0; i < 6; i++) playerIcons[i] = {};
     iconSelected[0] = true;
     iconSelected[1] = true;
+    for (int i = 0; i < GameConfig::MAX_PLAYERS; i++) {
+        nameCursorPos[i] = (int)std::strlen(config.playerNames[i]);
+    }
 }
 
 void NewGameScreen::loadAssets() {
@@ -34,7 +39,7 @@ void NewGameScreen::loadAssets() {
     float btnY = sh * 0.84f;
 
     btnBack.load("assets/new-game-page/back 2.png", 0, btnY + 2.0f, 1.0f);
-    btnBack.setScale(globalScale * 50.0f/ btnBack.getHeight());
+    btnBack.setScale(globalScale * 48.2f/ btnBack.getHeight());
 
     btnStart.load("assets/new-game-page/start 2.png", 0, btnY + 2.0f, 1.0f);
     btnStart.setScale(TARGET_BTN_H * globalScale / btnStart.getHeight());
@@ -42,7 +47,7 @@ void NewGameScreen::loadAssets() {
     float gap = 30.0f * globalScale;
     float totalW = btnBack.getWidth() + gap + btnStart.getWidth();
     float groupX = (sw - totalW) / 2.0f;
-    btnBack.setPosition(groupX, btnY - 58.0f);
+    btnBack.setPosition(groupX, btnY - 57.0f);
     btnStart.setPosition(groupX + btnBack.getWidth() + gap, btnY - 62.5f);
     TraceLog(LOG_INFO, "NGS: buttons loaded");
 }
@@ -90,20 +95,67 @@ void NewGameScreen::update(float dt) {
     Rectangle minusRect = {minusX, btnBoxY, btnBoxW, btnBoxH};
 
     if (CheckCollisionPointRec(mouse, plusRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-        if (playerCount < 4) playerCount++;
+        if (playerCount < 4) {
+            playerCount++;
+            gameConfig->playerCount = playerCount;
+            activeNameField = -1;
+        }
     }
     if (CheckCollisionPointRec(mouse, minusRect) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-        if (playerCount > 2) playerCount--;
+        if (playerCount > 2) {
+            playerCount--;
+            gameConfig->playerCount = playerCount;
+            activeNameField = -1;
+        }
     }
 
-    float iconScale = globalScale * 0.22f;
+    float iconScale = globalScale * 1.0f;
     float iconW = playerIcons[0].width * iconScale;
     float iconH = playerIcons[0].height * iconScale;
     float iconGap = 28 * globalScale;
-    float iconStartX = (sw - (playerCount * iconW + (playerCount - 1) * iconGap)) / 2.0f;
+
+    float nameFieldW = 130 * globalScale;
+    float nameFieldH = 30 * globalScale;
+    float cellW = std::max(iconW, nameFieldW);
+    float nameFieldGapY = 6 * globalScale;
+
+    float iconStartX = (sw - (playerCount * cellW + (playerCount - 1) * iconGap)) / 2.0f;
     float iconY = sh * 0.45f;
 
-    // Icon clicking removed — icons are decorative only
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        activeNameField = -1;
+        for (int i = 0; i < playerCount; i++) {
+            float cx = iconStartX + i * (cellW + iconGap) + cellW / 2.0f;
+            float nfX = cx - nameFieldW / 2.0f;
+            float nfY = iconY + iconH + nameFieldGapY;
+            Rectangle nameRect = {nfX, nfY, nameFieldW, nameFieldH};
+            if (CheckCollisionPointRec(mouse, nameRect)) {
+                activeNameField = i;
+                nameCursorPos[i] = (int)std::strlen(gameConfig->playerNames[i]);
+            }
+        }
+    }
+
+    if (activeNameField >= 0 && activeNameField < playerCount) {
+        int idx = activeNameField;
+        int key = GetCharPressed();
+        int len = (int)std::strlen(gameConfig->playerNames[idx]);
+        while (key > 0) {
+            if (len < GameConfig::MAX_NAME_LEN && key >= 32 && key <= 125) {
+                gameConfig->playerNames[idx][len] = (char)key;
+                gameConfig->playerNames[idx][len + 1] = '\0';
+                len++;
+                nameCursorPos[idx] = len;
+            }
+            key = GetCharPressed();
+        }
+        if (IsKeyPressed(KEY_BACKSPACE)) {
+            if (len > 0) {
+                gameConfig->playerNames[idx][len - 1] = '\0';
+                nameCursorPos[idx] = len - 1;
+            }
+        }
+    }
 
     if (IsWindowResized()) {
         unloadAssets();
@@ -166,18 +218,44 @@ void NewGameScreen::draw() {
     float iconW = playerIcons[0].width * iconScale;
     float iconH = playerIcons[0].height * iconScale;
     float iconGap = 28 * globalScale;
-    float iconStartX = (sw - (playerCount * iconW + (playerCount - 1) * iconGap)) / 2.0f;
+    float nameFieldW = 130 * globalScale;
+    float nameFieldH = 30 * globalScale;
+    float cellW = std::max(iconW, nameFieldW);
+    float nameFieldGapY = 6 * globalScale;
+
+    float iconStartX = (sw - (playerCount * cellW + (playerCount - 1) * iconGap)) / 2.0f;
     float iconY = sh * 0.45f;
 
+    int nameFontSize = static_cast<int>(20 * globalScale);
+
     for (int i = 0; i < playerCount; i++) {
-        float ix = iconStartX + i * (iconW + iconGap);
+        float cx = iconStartX + i * (cellW + iconGap) + cellW / 2.0f;
+        float ix = cx - iconW / 2.0f;
         DrawTextureEx(playerIcons[i], {ix, iconY}, 0.0f, iconScale, WHITE);
-        const char* pName = TextFormat("P%d", i + 1);
-        int nameSize = static_cast<int>(18 * globalScale);
-        int nameW = MeasureText(pName, nameSize);
-        DrawText(pName, static_cast<int>(ix + (iconW - nameW) / 2),
-                 static_cast<int>(iconY + iconH + 8),
-                 nameSize, WHITE);
+
+        float nfX = cx - nameFieldW / 2.0f;
+        float nfY = iconY + iconH + nameFieldGapY;
+        nameFields[i] = {nfX, nfY, nameFieldW, nameFieldH};
+
+        Color fieldBg = (activeNameField == i) ? Fade(WHITE, 0.25f) : Fade(BLACK, 0.35f);
+        Color fieldBorder = (activeNameField == i) ? YELLOW : Fade(YELLOW, 0.5f);
+        DrawRectangleRounded(nameFields[i], 0.15f, 8, fieldBg);
+        DrawRectangleRoundedLines(nameFields[i], 0.15f, 8, fieldBorder);
+
+        const char* nameText = gameConfig->playerNames[i];
+        int textW = MeasureText(nameText, nameFontSize);
+        int textX = static_cast<int>(nfX + nameFieldW / 2 - textW / 2);
+        int textY = static_cast<int>(nfY + (nameFieldH - nameFontSize) / 2);
+        DrawText(nameText, textX, textY, nameFontSize, WHITE);
+
+        if (activeNameField == i) {
+            int blinkOn = (GetTime() - (int)GetTime()) < 0.5 ? 1 : 0;
+            if (blinkOn) {
+                int cursorX = textX + textW;
+                DrawLine(cursorX, static_cast<int>(nfY + 4 * globalScale),
+                         cursorX, static_cast<int>(nfY + nameFieldH - 4 * globalScale), WHITE);
+            }
+        }
     }
 
     btnBack.draw();

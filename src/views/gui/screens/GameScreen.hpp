@@ -3,50 +3,50 @@
 
 #include "../Screen.hpp"
 #include "../components/Button.hpp"
+#include "config/GameConfig.hpp"
 #include "raylib.h"
-#include <vector>
-#include <string>
-
-struct MockPlayer {
-    std::string name;
-    int money;
-    int tileIndex;
-    Color color;
-};
 
 class GameScreen : public Screen {
 private:
     Texture2D bgTexture;
+    Texture2D blurredBgTexture;
     Texture2D boardTexture;
-    Texture2D diceFaces[6];
     Texture2D playerIcons[6];
-    Texture2D cardTex;
+    Texture2D cardPanel;
+    Texture2D diceTextures[6];
 
-    Button btnSettings;
+    Button btnPlay;
+    Button btnAssets;
+    Button btnPlayers;
+    Button btnLog;
     Button btnRollDice;
     Button btnEndTurn;
 
-    std::vector<MockPlayer> players;
+    int activeTab;
     int currentPlayerIdx;
-    int die1, die2;
-    bool diceRolled;
-    int turnCount;
-    int maxTurn;
+    int numPlayers;
 
-    float boardScale;
-    float boardX, boardY;
+    int dice1;
+    int dice2;
+    bool diceRolling;
+    float diceRollTimer;
+    float diceRollInterval;
+    int diceRollFrame;
+
+    bool hasRolled;
+    bool turnEnded;
+
     float globalScale;
+    float boardX, boardY, boardScale;
+    float cornerRatio;
+    float tileCenters[40][2];
 
-    std::vector<std::string> logMessages;
+    GameConfig* gameConfig;
 
-    void computeBoardLayout();
-    void drawHUD();
-    void drawPlayerTokens();
-    void drawLogPanel();
-    Vector2 getTilePosition(int tileIndex);
+    void computeLayout();
 
 public:
-    GameScreen();
+    GameScreen(GameConfig& config);
     void loadAssets() override;
     void unloadAssets() override;
     void update(float dt) override;
