@@ -44,10 +44,22 @@ void OutputFormatter::initializeColors(Board &b) {
         PropertyTile *pt = dynamic_cast<PropertyTile*>(t);
         if (pt) {
             string group = pt->getColorGroup();
-            if (!group.empty() && color_group_ansi.find(group) == color_group_ansi.end()) {
-                color_group_ansi[group] = color_palette[next_color_idx % color_palette.size()];
-                color_group_codes[group] = generateCode(group);
-                next_color_idx++;
+            if (group.empty() || pt->getTileType() == "RAILROAD" || pt->getTileType() == "UTILITY") continue;
+            if (color_group_ansi.find(group) == color_group_ansi.end()) {
+                // Use predefined mapping if available, otherwise fall back to palette
+                auto kit = known_ansi.find(group);
+                if (kit != known_ansi.end()) {
+                    color_group_ansi[group] = kit->second;
+                } else {
+                    color_group_ansi[group] = color_palette[next_color_idx % color_palette.size()];
+                    next_color_idx++;
+                }
+                auto cit = known_codes.find(group);
+                if (cit != known_codes.end()) {
+                    color_group_codes[group] = cit->second;
+                } else {
+                    color_group_codes[group] = generateCode(group);
+                }
             }
         }
     }
@@ -281,9 +293,10 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
     }
 }
 
-void OutputFormatter::printAkta(PropertyTile &t, Board &b){
+void OutputFormatter::printAkta(PropertyTile &t, Board &b, const GameConfig &cfg){
     initializeColors(b);
-    string color = getGroupColor(t.getColorGroup());
+    string ttype = t.getTileType();
+    string color = (ttype == "UTILITY") ? "\033[1;90m" : getGroupColor(t.getColorGroup());
     auto mval = [](int v) { return "M" + to_string(v); };
     auto row = [&](string label, string val) {
         cout << color << "|" << reset
@@ -291,24 +304,49 @@ void OutputFormatter::printAkta(PropertyTile &t, Board &b){
              << color << leftOut(" " + val, 8) << "|" << reset << "\n";
     };
 
-    string header = "[" + t.getColorGroup() + "] " + t.getTileName() + " (" + t.getTileCode() + ")";
+    string groupTag = (ttype == "RAILROAD") ? "STASIUN" :
+                      (ttype == "UTILITY")  ? "UTILITAS" : t.getColorGroup();
+    string header = "[" + groupTag + "] " + t.getTileName() + " (" + t.getTileCode() + ")";
     if ((int)header.size() > 32) header = header.substr(0, 32);
 
     cout << color << "+================================+" << reset << "\n";
     cout << color << "|" << reset << centerOut("AKTA KEPEMILIKAN", 32) << color << "|" << reset << "\n";
     cout << color << "|" << reset << centerOut(header, 32)             << color << "|" << reset << "\n";
     cout << color << "+================================+" << reset << "\n";
-    row("Harga Beli",  mval(t.getBuyPrice()));
-    row("Nilai Gadai", mval(t.getMortgageValue()));
-    cout << color << "+--------------------------------+" << reset << "\n";
-    vector<string> labels = {"Sewa (unimproved)","Sewa (1 rumah)","Sewa (2 rumah)",
-                              "Sewa (3 rumah)","Sewa (4 rumah)","Sewa (Hotel)"};
-    vector<int> rents = t.getRentPrice();
-    for (int i = 0; i < (int)labels.size() && i < (int)rents.size(); i++)
-        row(labels[i], mval(rents[i]));
-    cout << color << "+--------------------------------+" << reset << "\n";
-    row("Harga Rumah", mval(t.getHouseCost()));
-    row("Harga Hotel", mval(t.getHotelCost()));
+
+    if (ttype == "RAILROAD") {
+        row("Cara Mendapat", "Gratis (landing)");
+        row("Nilai Gadai",   mval(t.getMortgageValue()));
+        cout << color << "+--------------------------------+" << reset << "\n";
+        const auto &rr = cfg.getRailroadRent();
+        for (auto &[cnt, rent] : rr) {
+            string label = "Sewa (" + to_string(cnt) + " stasiun)";
+            row(label, mval(rent));
+        }
+    } else if (ttype == "UTILITY") {
+        row("Cara Mendapat", "Gratis (landing)");
+        row("Nilai Gadai",   mval(t.getMortgageValue()));
+        cout << color << "+--------------------------------+" << reset << "\n";
+        const auto &um = cfg.getUtilityMultiplier();
+        for (auto &[cnt, mult] : um) {
+            string label = "Sewa (" + to_string(cnt) + " utilitas)";
+            row(label, "dadu x " + to_string(mult));
+        }
+    } else {
+        // STREET
+        row("Harga Beli",  mval(t.getBuyPrice()));
+        row("Nilai Gadai", mval(t.getMortgageValue()));
+        cout << color << "+--------------------------------+" << reset << "\n";
+        vector<string> labels = {"Sewa (tanah kosong)", "Sewa (1 rumah)", "Sewa (2 rumah)",
+                                  "Sewa (3 rumah)", "Sewa (4 rumah)", "Sewa (hotel)"};
+        vector<int> rents = t.getRentPrice();
+        for (int i = 0; i < (int)labels.size() && i < (int)rents.size(); i++)
+            row(labels[i], mval(rents[i]));
+        cout << color << "+--------------------------------+" << reset << "\n";
+        row("Harga Rumah", mval(t.getHouseCost()));
+        row("Harga Hotel", mval(t.getHotelCost()));
+    }
+
     cout << color << "+================================+" << reset << "\n";
     string owner_str  = t.getTileOwner() ? t.getTileOwner()->getUsername() : "BANK";
     string status_str = t.isMortgage() ? "DIGADAI" : "AKTIF";
@@ -395,7 +433,8 @@ void OutputFormatter::printWin(vector<Player> &ps, bool is_bankruptcy){
     } else {
         cout << "Pemain tersisa:\n";
         for(auto& p : ps)
-            cout << "  - " << p.getUsername() << "\n";
+            if (p.getStatus() != "BANKRUPT")
+                cout << "  - " << p.getUsername() << "\n";
         cout << "\n";
     }
 
