@@ -11,6 +11,7 @@ class Card {
         Card();
         virtual ~Card() = default;
         virtual void action(Player& player) = 0;
+        virtual std::string describe() const { return ""; }
 };
 
 class ChanceCard : public Card {

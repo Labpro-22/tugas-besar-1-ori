@@ -9,6 +9,7 @@ class StepbackCard : public ChanceCard {
     public:
         StepbackCard(int boardSize);
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 class NearestStreetCard : public ChanceCard {
@@ -18,6 +19,7 @@ class NearestStreetCard : public ChanceCard {
     public:
         NearestStreetCard(int boardSize, std::vector<int> stationPositions);
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 class JailCard : public ChanceCard {
@@ -26,6 +28,7 @@ class JailCard : public ChanceCard {
     public:
         JailCard(int jailPosition);
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 #endif

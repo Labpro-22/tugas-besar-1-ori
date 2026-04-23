@@ -92,6 +92,11 @@ private:
     Player* getCreditorAt(int tileIdx) const;
     void    addLog(Player &p, const std::string &action, const std::string &detail = "");
     bool    hasPendingAction(Player &p) const;
+    int     getPlayerNum(Player &p) const;
+    void    autoPayRent(Player &p, PropertyTile &prop);
+    void    recoverForRent(Player &p, PropertyTile &prop);
+    void    interactiveLelang(Player *seller, PropertyTile &prop, std::vector<Player*> &participants);
+    bool    game_over_by_bankruptcy = false;
 
 protected:
     void nextTurn();

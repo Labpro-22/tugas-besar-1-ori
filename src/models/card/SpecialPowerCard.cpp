@@ -33,6 +33,12 @@ namespace
 } // namespace
 
 MoveCard::MoveCard(int value, int boardSize) : SpecialPowerCard(), value(value), boardSize(boardSize) {}
+std::string MoveCard::describe() const { return "Maju " + std::to_string(value) + " petak"; }
+std::string DiscountCard::describe() const { return "Diskon " + std::to_string(value) + "% untuk pembelian properti berikutnya"; }
+std::string ShieldCard::describe() const { return "Perisai: imun dari sewa 1 giliran penuh"; }
+std::string TeleportCard::describe() const { return "Teleport: pindah ke petak mana saja di papan"; }
+std::string LassoCard::describe() const { return "Lasso: pindahkan 1 pemain lain ke petak Anda"; }
+std::string DemolitionCard::describe() const { return "Demolisi: hancurkan 1 bangunan di properti lawan"; }
 
 int MoveCard::getMoveValue() const { return value; }
 

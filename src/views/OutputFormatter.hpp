@@ -22,8 +22,22 @@ class OutputFormatter {
         map<string, string> color_group_ansi;
         map<string, string> color_group_codes;
         vector<string> color_palette = {
-            "\033[1;34m", "\033[1;31m", "\033[1;32m", "\033[1;33m",
-            "\033[1;35m", "\033[1;36m", "\033[0;33m", "\033[38;5;208m", "\033[1;90m"
+            "\033[38;5;196m",  // merah terang
+            "\033[38;5;27m",   // biru royal
+            "\033[38;5;46m",   // hijau neon
+            "\033[38;5;226m",  // kuning terang
+            "\033[38;5;201m",  // pink/magenta
+            "\033[38;5;51m",   // cyan/aqua
+            "\033[38;5;208m",  // oranye
+            "\033[38;5;94m",   // coklat/cokelat
+            "\033[38;5;129m",  // ungu
+            "\033[38;5;82m",   // hijau limau
+            "\033[38;5;33m",   // biru langit
+            "\033[38;5;166m",  // oranye tua
+            "\033[38;5;45m",   // biru muda
+            "\033[38;5;124m",  // merah gelap
+            "\033[38;5;28m",   // hijau tua
+            "\033[38;5;171m",  // lavender
         };
         int next_color_idx = 0;
 

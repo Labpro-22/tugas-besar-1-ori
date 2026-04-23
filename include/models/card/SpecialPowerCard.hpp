@@ -11,6 +11,7 @@ class MoveCard : public SpecialPowerCard {
         MoveCard(int value, int boardSize);
         int getMoveValue() const;
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 class DiscountCard : public SpecialPowerCard {
@@ -20,30 +21,35 @@ class DiscountCard : public SpecialPowerCard {
         DiscountCard(int value);
         int getDiscountValue() const;
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 class ShieldCard : public SpecialPowerCard {
     public:
         ShieldCard();
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 class TeleportCard : public SpecialPowerCard {
     public:
         TeleportCard();
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 class LassoCard : public SpecialPowerCard {
     public:
         LassoCard();
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 class DemolitionCard : public SpecialPowerCard {
     public:
         DemolitionCard();
         void action(Player& player) override;
+        std::string describe() const override;
 };
 
 #endif

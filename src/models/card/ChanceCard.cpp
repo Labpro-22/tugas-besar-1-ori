@@ -21,6 +21,9 @@ namespace
 } // namespace
 
 StepbackCard::StepbackCard(int boardSize) : ChanceCard(), boardSize(boardSize) {}
+std::string StepbackCard::describe() const { return "Mundur 3 petak"; }
+std::string NearestStreetCard::describe() const { return "Pindah ke stasiun/rel terdekat"; }
+std::string JailCard::describe() const { return "Masuk penjara! Langsung ke penjara, tidak melewati GO"; }
 
 void StepbackCard::action(Player &player)
 {
