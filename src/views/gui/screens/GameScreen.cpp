@@ -90,24 +90,27 @@ void GameScreen::computeLayout() {
     float iconYPos = btnPlay.getY() + btnPlay.getHeight() - 198.0f * globalScale;
     float playerNameBottom = iconYPos + iconSz + 10.0f * globalScale;
 
-    float diceSz = cardPanel.width * cardScale * 0.10f;
+float diceSz = cardPanel.width * cardScale * 0.12f;
     float diceY = playerNameBottom + 18.0f * globalScale;
+    float diceGap = 10.0f * globalScale;
+    float btnGap = 6.0f * globalScale;
 
-    float actionBtnW = cardPanel.width * cardScale * 0.2f;
+    float rollBtnW = cardPanel.width * cardScale * 0.32f;
+    float endBtnW = cardPanel.width * cardScale * 0.15f ;
     float actionBtnH = diceSz * 0.85f;
-    float rowGap = 10.0f * globalScale;
 
-    float totalRowW = diceSz + diceSz + rowGap + actionBtnW + rowGap + actionBtnW;
-    float rowStartX = cardX + (cardPanel.width * cardScale - totalRowW) / 2.0f;
-    float actionBtnY = diceY + (diceSz - actionBtnH) / 2.0f;
+    float totalW = diceSz + diceSz + diceGap;
+    float rowStartX = cardX + (cardPanel.width * cardScale - totalW) / 2.0f - 92.0f * globalScale;
 
     float dice1X = rowStartX;
-    float dice2X = dice1X + diceSz + rowGap;
-    float rollBtnX = dice2X + diceSz + rowGap;
-    float endTurnBtnX = rollBtnX + actionBtnW + rowGap;
+    float dice2X = dice1X + diceSz + diceGap;
+    float rollBtnX = dice2X + diceSz + diceGap;
+    float endBtnX = rollBtnX + rollBtnW + btnGap;
 
-    btnRollDice.loadAsText("ROLL", rollBtnX, actionBtnY, actionBtnW, actionBtnH);
-    btnEndTurn.loadAsText("END TURN", endTurnBtnX, actionBtnY, actionBtnW, actionBtnH);
+    float actionBtnY = diceY + (diceSz - actionBtnH) + 10.0f/ 2.0f;
+
+    btnRollDice.loadAsText("ROLL", rollBtnX, actionBtnY, rollBtnW, actionBtnH, {244, 206, 43, 255}, {250, 220, 70, 255}, {80, 40, 35, 255});
+    btnEndTurn.loadAsText("END", endBtnX, actionBtnY, endBtnW, actionBtnH, {255, 235, 202, 255}, {255, 240, 215, 255}, {80, 40, 35, 255});
 }
 
 void GameScreen::loadAssets() {
@@ -258,15 +261,14 @@ void GameScreen::draw() {
              static_cast<int>(playerNameX), static_cast<int>(playerNameY),
              playerNameSize, BLACK);
 
-    float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
-    float diceSz = cardPanel.width * cardScale * 0.10f;
+float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
+    float diceSz = cardPanel.width * cardScale * 0.14f;
     float diceGap = 10.0f * globalScale;
-    float diceY = playerNameBottom + 18.0f * globalScale;
+    float diceY = playerNameBottom + 21.0f * globalScale;
+    float btnGap = 6.0f * globalScale;
 
-    float totalRowW = diceSz + diceSz + diceGap + btnRollDice.getWidth() + diceGap + btnEndTurn.getWidth();
-    float rowStartX = cardX + (cardPanel.width * cardScale - totalRowW) / 2.0f;
-
-    float d1x = rowStartX;
+    float totalW = diceSz + diceSz + diceGap;
+    float d1x = cardX + (cardPanel.width * cardScale - totalW) / 2.0f - 105.0f * globalScale;
     float d2x = d1x + diceSz + diceGap;
     float dice1Sc = diceSz / (float)diceTextures[dice1 - 1].width;
     float dice2Sc = diceSz / (float)diceTextures[dice2 - 1].width;
@@ -274,5 +276,6 @@ void GameScreen::draw() {
     DrawTextureEx(diceTextures[dice2 - 1], {d2x, diceY}, 0.0f, dice2Sc, WHITE);
 
     btnRollDice.draw();
+    DrawRectangleLinesEx({btnRollDice.getX(), btnRollDice.getY(), btnRollDice.getWidth(), btnRollDice.getHeight()}, 2, BLACK);
     btnEndTurn.draw();
 }
