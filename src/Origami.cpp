@@ -1347,9 +1347,18 @@ void Origami::interactiveLelang(Player *seller, PropertyTile &prop,
             } else {
                 cout << "Giliran: " << last->getUsername() << " (saldo M" << last->getBalance() << ")\n";
                 cout << "Anda WAJIB melakukan BID. Minimum: M" << forcedBid << "\n";
-                cout << "BID <jumlah>: ";
-                cin >> forcedBid;
-                if (forcedBid < 0) forcedBid = 0;
+                while (true) {
+                    cout << "BID <jumlah>: ";
+                    string bidInput;
+                    cin >> bidInput;
+                    try {
+                        forcedBid = stoi(bidInput);
+                        if (forcedBid < 0) forcedBid = 0;
+                        break;
+                    } catch (...) {
+                        cout << "Masukkan angka yang valid.\n";
+                    }
+                }
             }
             if (forcedBid >= 0 && forcedBid > highestBid && forcedBid <= last->getBalance()) {
                 highestBid = forcedBid;
@@ -1811,10 +1820,11 @@ void Origami::humanTurn(Player &p) {
                 int idx = readInt("Pilih kartu yang ingin digunakan (0-" + to_string(p.getHandSize()) + "): ", 0, p.getHandSize());
                 if (idx == 0) { cout << "Dibatalkan.\n"; }
                 else {
+                    int tileBefore = p.getCurrTile();
                     cmdGunakanKemampuan(p, idx - 1);
                     has_executed_action = true;
-                    // Moved via skill card — allow BELI
-                    if (p.isSkillUsed()) moved_via_card = true;
+                    // Only allow post-move commands if position actually changed
+                    if (p.getCurrTile() != tileBefore) moved_via_card = true;
                 }
             }
         } else if (cmd == "DROP_KEMAMPUAN") {
@@ -1960,10 +1970,10 @@ void Origami::humanTurn(Player &p) {
         } else if (cmd == "BAYAR_PAJAK") {
             cout << "Pajak dibayar otomatis saat mendarat.\n";
         } else if (cmd == "LELANG") {
-            if (!has_rolled) cout << "Lempar dadu terlebih dahulu.\n";
+            if (!has_rolled && !moved_via_card) cout << "Lempar dadu terlebih dahulu.\n";
             else { string code; cin >> code; cmdLelang(p, code); has_auction_done = true; }
         } else if (cmd == "FESTIVAL") {
-            if (!has_rolled) {
+            if (!has_rolled && !moved_via_card) {
                 cout << "Lempar dadu terlebih dahulu.\n";
             } else if (has_festival_used) {
                 cout << "Festival sudah digunakan pada giliran ini.\n";
@@ -2008,7 +2018,7 @@ void Origami::humanTurn(Player &p) {
                 } else {
                     cout << "Harus melempar dadu sebelum selesai.\n";
                 }
-            } else if (has_rolled && hasPendingAction(p) && !has_auction_done) {
+            } else if ((has_rolled || moved_via_card) && hasPendingAction(p) && !has_auction_done) {
                 // Auto-trigger auction for declined STREET property
                 Tile *t = tiles[p.getCurrTile()];
                 auto *prop = dynamic_cast<PropertyTile*>(t);
@@ -2246,7 +2256,6 @@ void Origami::checkWinCondition() {
 // ── start ─────────────────────────────────────────────────────────────────────
 void Origami::start() {
     initDecks();
-    distributeSkillCards();
     cout << "\nGame dimulai! Max " << max_turn << " giliran.\n";
 
     while (!game_over) {

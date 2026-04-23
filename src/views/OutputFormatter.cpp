@@ -492,7 +492,7 @@ void OutputFormatter::printPlayerStatus(Player &p) {
     cout << leftOut("Properti", 12) << ": "  << p.getOwnedProperties().size() << " petak\n";
     cout << leftOut("Net Worth", 12) << ": M" << p.getNetWorth() << "\n";
     if (p.getHandSize() > 0) {
-        cout << leftOut("Kartu Kemampuan", 12) << ": " << p.getHandSize() << " kartu\n";
+        cout << leftOut("Skill Cards", 12) << ": " << p.getHandSize() << " kartu\n";
         for (int i = 0; i < p.getHandSize(); i++) {
             auto *card = p.getHandCard(i);
             if (card) cout << "  " << (i+1) << ". " << card->describe() << "\n";
@@ -501,17 +501,6 @@ void OutputFormatter::printPlayerStatus(Player &p) {
     if (p.getStatus() == "JAIL") {
         cout << leftOut("Penjara", 12) << ": Dalam penjara\n";
     }
-    const auto &props = p.getOwnedProperties();
-    if (!props.empty()) {
-        cout << "\nDaftar Properti:\n";
-        for (auto *pt : props) {
-            if (!pt) continue;
-            string lvlStr = (pt->getLevel() >= 5) ? "Hotel" : (pt->getLevel() > 0 ? to_string(pt->getLevel()) + " rumah" : "tanah");
-            string mortgageStr = pt->isMortgage() ? " [GADAI]" : "";
-            cout << "  - " << pt->getTileName() << " (" << pt->getTileCode() << ") " << lvlStr << mortgageStr << "\n";
-        }
-    }
-    cout << "\n";
 }
 
 void OutputFormatter::printAuction() {
