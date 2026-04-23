@@ -1,55 +1,77 @@
-# Makefile for C++ OOP Project (Optimized & Recursive)
+# Makefile for Nimonspoli — supports 'make' (CLI) and 'make gui' (SFML GUI)
 
-# Compiler settings
 CXX      := g++
 CXXFLAGS := -Wall -Wextra -std=c++17 -I include -I .
 
-# Directories
-SRC_DIR     := src
-OBJ_DIR     := build
-BIN_DIR     := bin
-INCLUDE_DIR := include
-DATA_DIR    := data
-CONFIG_DIR  := config
+SRC_DIR  := src
+OBJ_DIR  := build
+BIN_DIR  := bin
+DATA_DIR := data
+CONFIG_DIR := config
 
-# Target executable
-TARGET := $(BIN_DIR)/game
+# ── Raylib (GUI) ──────────────────────────────────────────────────────────────
+RAYLIB_INC        := -I/opt/homebrew/include
+RAYLIB_LIB        := -L/opt/homebrew/lib -lraylib
+RAYLIB_FRAMEWORKS := -framework CoreVideo -framework IOKit -framework Cocoa \
+                     -framework GLUT -framework OpenGL
+GUI_LDFLAGS       := $(RAYLIB_LIB) $(RAYLIB_FRAMEWORKS)
 
-# 1. Recursive Source Finding
-# Secara otomatis mencari semua file .cpp di dalam src/ dan semua sub-foldernya
-SRCS := $(shell find $(SRC_DIR) -name '*.cpp')
+# ── CLI Build (excludes gui_main.cpp and src/views/gui/) ─────────────────────
+CLI_SRCS := $(shell find $(SRC_DIR) -name '*.cpp' \
+              ! -name 'gui_main.cpp' \
+              ! -path '$(SRC_DIR)/views/gui/*')
+CLI_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/cli/%.o, $(CLI_SRCS))
+CLI_DEPS := $(CLI_OBJS:.o=.d)
 
-# 2. Dynamic Object Mapping
-# Mengubah path src/xxx/yyy.cpp menjadi build/xxx/yyy.o
-OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(SRCS))
+CLI_TARGET := $(BIN_DIR)/game
 
-# Main targets
-all: directories $(TARGET)
+# ── GUI Build (all sources + gui_main.cpp, excludes main.cpp) ────────────────
+GUI_SRCS := $(shell find $(SRC_DIR) -name '*.cpp' \
+              ! -name 'main.cpp')
+GUI_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/gui/%.o, $(GUI_SRCS))
+GUI_DEPS := $(GUI_OBJS:.o=.d)
 
-# Create necessary root directories
+GUI_TARGET := $(BIN_DIR)/game_gui
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+all: directories $(CLI_TARGET)
+
+gui: directories $(GUI_TARGET)
+
 directories:
-	@mkdir -p $(OBJ_DIR) $(BIN_DIR) $(DATA_DIR) $(CONFIG_DIR)
+	@mkdir -p $(OBJ_DIR)/cli $(OBJ_DIR)/gui $(BIN_DIR) $(DATA_DIR) $(CONFIG_DIR)
 
-# Link object files to create executable
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
-	@echo "Build successful! Executable is at $(TARGET)"
-
-# Compile source files into object files
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+# ── CLI compile (with auto header dependency tracking via -MMD) ───────────────
+$(OBJ_DIR)/cli/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
-# Run the game
-run: all
-	./$(TARGET)
+$(CLI_TARGET): $(CLI_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+	@echo "CLI build OK → $(CLI_TARGET)"
 
-# Clean up generated files
+# ── GUI compile (with auto header dependency tracking via -MMD) ───────────────
+$(OBJ_DIR)/gui/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(RAYLIB_INC) -DGUI_MODE -MMD -MP -c $< -o $@
+
+$(GUI_TARGET): $(GUI_OBJS)
+	$(CXX) $(CXXFLAGS) $^ $(GUI_LDFLAGS) -o $@
+	@echo "GUI build OK → $(GUI_TARGET)"
+
+# Include auto-generated header deps (ignored if missing on first build)
+-include $(CLI_DEPS)
+-include $(GUI_DEPS)
+
+run:     all     ; ./$(CLI_TARGET)
+run-gui: gui     ; ./$(GUI_TARGET)
+
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
-	@echo "Cleaned up $(OBJ_DIR) and $(BIN_DIR)"
+	@echo "Cleaned."
 
-# Rebuild everything from scratch
-rebuild: clean all
+rebuild:     clean all
+rebuild-gui: clean gui
 
-.PHONY: all clean rebuild run directories
+.PHONY: all gui directories run run-gui clean rebuild rebuild-gui
