@@ -74,18 +74,15 @@ void CardManager::transfer(Player &from, Player &to, int amount)
         return;
     }
 
-    if (from.getBalance() < amount && from.getStatus() != "BANKRUPT")
+    if (from.getStatus() == "BANKRUPT")
     {
-        int paid = from.getBalance();
-        if (paid > 0)
-        {
-            from += -paid;
-            to += paid;
-        }
+        return;
     }
-    else
+
+    int actual = std::min(amount, from.getBalance());
+    if (actual > 0)
     {
-        from += -amount;
-        to += amount;
+        from += -actual;
+        to += actual;
     }
 }

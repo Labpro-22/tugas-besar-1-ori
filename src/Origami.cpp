@@ -609,7 +609,18 @@ void Origami::applyLanding(Player &p) {
                 cout << "[SHIELD ACTIVE]: Efek ShieldCard melindungi Anda!\n";
                 cout << "Tagihan dari kartu Dana Umum dibatalkan. Uang Anda tetap: M" << p.getBalance() << ".\n";
             } else {
+                int balBefore = p.getBalance();
                 CardManager::resolveCardEffect(*card, p, players);
+                // Check bankruptcy after card effect
+                if (p.getBalance() <= 0 && balBefore > 0) {
+                    int maxLiq = PropertyManager::calculateMaxLiquidation(p);
+                    if (maxLiq <= 0) {
+                        cout << p.getUsername() << " tidak mampu membayar! Bangkrut!\n";
+                        cmdBangkrut(p);
+                    } else {
+                        cout << "Saldo habis setelah efek kartu. Lakukan likuidasi aset.\n";
+                    }
+                }
             }
             community_deck.discardCard(card);
             addLog(p, "KARTU", "Dana Umum: " + card->describe());
@@ -821,7 +832,7 @@ void Origami::cmdBeli(Player &p) {
     if (!prop || prop->getTileOwner()) {
         cout << "Tidak bisa membeli properti ini.\n"; return;
     }
-    // Spec: Railroad/Utility auto-ownership (no manual buy)
+    // Railroad/Utility are auto-acquired on landing
     if (prop->getTileType() != "STREET") {
         cout << "Railroad/Utility didapat otomatis saat mendarat. Tidak perlu BELI.\n";
         return;
@@ -1302,33 +1313,51 @@ void Origami::interactiveLelang(Player *seller, PropertyTile &prop,
     cout << "Peserta (" << bidders.size() << " orang) — minimum bid M0.\n";
     cout << "Aksi: PASS atau BID <jumlah>\n";
 
-    int highestBid     = 0;
+    int highestBid     = -1;
     Player *highestBidder = nullptr;
     int  consecPasses  = 0;   // consecutive passes since last bid
     bool anyBid        = false;
     int  rot           = 0;
-    // Track players who can never bid (permanently broke or bankrupt)
+    // Players who can never bid (broke / bankrupt)
     set<Player*> permanentPass;
 
     while (true) {
-        // End when N-1 consecutive passes after at least one bid
+        // Done when N-1 consecutive passes after at least one bid
         if (anyBid && consecPasses >= needPasses) break;
-        // End when all but one player permanently cannot bid and no one bid yet
-        if (static_cast<int>(permanentPass.size()) >= static_cast<int>(bidders.size()) - 1 && !anyBid) {
-            // Force the remaining player to bid at minimum
+        // All players passed without any bid — force last eligible to bid
+        if (!anyBid && consecPasses >= needPasses) {
+            // Find next eligible bidder
             Player *last = nullptr;
-            for (auto *b : bidders) if (!permanentPass.count(b)) { last = b; break; }
-            if (!last) break;
-            cout << "[Wajib BID — Anda satu-satunya peserta tersisa]\n";
-            bool isBot = (dynamic_cast<Bot*>(last) != nullptr);
-            int forcedBid = highestBid + 1;
-            if (isBot) forcedBid = min(forcedBid, last->getBalance());
-            else {
-                cout << "Giliran: " << last->getUsername() << " (saldo M" << last->getBalance() << ")\n";
-                cout << "BID <jumlah>: "; cin >> forcedBid;
+            for (int j = 0; j < static_cast<int>(bidders.size()); j++) {
+                Player *candidate = bidders[(rot + j) % static_cast<int>(bidders.size())];
+                if (!permanentPass.count(candidate) && candidate->getStatus() != "BANKRUPT") {
+                    last = candidate;
+                    break;
+                }
             }
-            if (forcedBid > 0 && forcedBid > highestBid && forcedBid <= last->getBalance()) {
+            if (!last) {
+                // Nobody eligible — no winner
+                break;
+            }
+            cout << "[Wajib BID — semua pemain lain sudah PASS]\n";
+            bool isBotForced = (dynamic_cast<Bot*>(last) != nullptr);
+            int forcedBid = max(0, highestBid + 1);
+            if (isBotForced) {
+                forcedBid = min(max(0, forcedBid), last->getBalance());
+            } else {
+                cout << "Giliran: " << last->getUsername() << " (saldo M" << last->getBalance() << ")\n";
+                cout << "Anda WAJIB melakukan BID. Minimum: M" << forcedBid << "\n";
+                cout << "BID <jumlah>: ";
+                cin >> forcedBid;
+                if (forcedBid < 0) forcedBid = 0;
+            }
+            if (forcedBid >= 0 && forcedBid > highestBid && forcedBid <= last->getBalance()) {
                 highestBid = forcedBid;
+                highestBidder = last;
+                anyBid = true;
+            } else if (forcedBid == 0 && highestBid < 0) {
+                // M0 is a valid opening bid
+                highestBid = 0;
                 highestBidder = last;
                 anyBid = true;
             }
@@ -1340,7 +1369,7 @@ void Origami::interactiveLelang(Player *seller, PropertyTile &prop,
         if (permanentPass.count(cur)) continue;
         if (cur->getStatus() == "BANKRUPT") { permanentPass.insert(cur); consecPasses++; continue; }
 
-        int minNext = anyBid ? (highestBid + 1) : 1; // first bid min is M1
+        int minNext = anyBid ? (highestBid + 1) : 0; // opening bid min M0
         if (cur->getBalance() < minNext) {
             cout << cur->getUsername() << " auto-pass (saldo M" << cur->getBalance() << " < min M" << minNext << ").\n";
             permanentPass.insert(cur);
@@ -1376,7 +1405,7 @@ void Origami::interactiveLelang(Player *seller, PropertyTile &prop,
             if (highestBidder)
                 cout << "Penawaran tertinggi: M" << highestBid << " (" << highestBidder->getUsername() << ")\n";
             else
-                cout << "Belum ada penawaran. Minimum bid: M1\n";
+                cout << "Belum ada penawaran. Minimum bid: M0\n";
             cout << "Aksi (PASS / BID <jumlah>)\n> ";
 
             string action;
@@ -1388,7 +1417,7 @@ void Origami::interactiveLelang(Player *seller, PropertyTile &prop,
                 consecPasses++;
             } else if (action == "BID") {
                 int bid; cin >> bid;
-                if (bid <= highestBid || bid < 1 || bid > cur->getBalance()) {
+                if (bid <= highestBid || bid < 0 || bid > cur->getBalance()) {
                     cout << "Bid tidak valid (harus > M" << highestBid
                          << " dan <= saldo M" << cur->getBalance() << "). Dianggap PASS.\n";
                     consecPasses++;
@@ -1437,8 +1466,8 @@ void Origami::cmdFestival(Player &p, const string &code, int /*mult*/, int /*dur
         cout << "Bukan properti Anda.\n"; return;
     }
 
-    // Spec: doubles for 3 turns. Re-selecting same property doubles again, max 3 stacks (8x).
-    // After max, only reset duration.
+    // Festival: rent x2 for 3 turns, stacks up to 3x (x8)
+    // At max stacks, only reset duration
     int curMult = prop->getFestivalMultiplier();
     int newMult;
     bool atMax = false;
@@ -1647,13 +1676,20 @@ void Origami::cmdGunakanKemampuan(Player &p, int index) {
         p.setSkillUsed(true);
         addLog(p, "GUNAKAN_KEMAMPUAN", "DemolitionCard -> " + targetProp->getTileCode());
     } else {
+        // Cache card type before removing from hand
+        bool isMoveCard = (dynamic_cast<MoveCard*>(card) != nullptr);
+        bool isShieldCard = (dynamic_cast<ShieldCard*>(card) != nullptr);
+        bool isDiscountCard = (dynamic_cast<DiscountCard*>(card) != nullptr);
+
+        // Execute effect then remove from hand
         card->action(p);
         p.removeHandCard(index);
-        if (dynamic_cast<ShieldCard*>(card)) {
+
+        if (isShieldCard) {
             cout << "ShieldCard diaktifkan! Anda kebal terhadap tagihan atau sanksi selama giliran ini.\n";
-        } else if (dynamic_cast<DiscountCard*>(card)) {
+        } else if (isDiscountCard) {
             cout << "DiscountCard diaktifkan! " << cardDesc << "\n";
-        } else if (dynamic_cast<MoveCard*>(card)) {
+        } else if (isMoveCard) {
             cout << "MoveCard digunakan! " << cardDesc << "\n";
         } else {
             cout << "Kartu kemampuan digunakan: " << cardDesc << "\n";
@@ -1680,10 +1716,11 @@ void Origami::humanTurn(Player &p) {
     bool has_executed_action   = false;
     bool has_festival_used     = false;
     bool has_auction_done      = false;
+    bool moved_via_card        = false;
     int  consec_doubles        = 0;
     int  pnum                  = getPlayerNum(p);
 
-    // Spec: draw 1 skill card at start of every turn (only if not in jail)
+    // Draw 1 skill card at start of turn (not in jail)
     if (p.getStatus() != "JAIL") drawSkillCardAtTurnStart(p);
 
     cout << "\n=== Giliran " << p.getUsername()
@@ -1773,7 +1810,12 @@ void Origami::humanTurn(Player &p) {
                 cout << "  0. Batal\n";
                 int idx = readInt("Pilih kartu yang ingin digunakan (0-" + to_string(p.getHandSize()) + "): ", 0, p.getHandSize());
                 if (idx == 0) { cout << "Dibatalkan.\n"; }
-                else { cmdGunakanKemampuan(p, idx - 1); has_executed_action = true; }
+                else {
+                    cmdGunakanKemampuan(p, idx - 1);
+                    has_executed_action = true;
+                    // Moved via skill card — allow BELI
+                    if (p.isSkillUsed()) moved_via_card = true;
+                }
             }
         } else if (cmd == "DROP_KEMAMPUAN") {
             int idx; cin >> idx;
@@ -1794,59 +1836,71 @@ void Origami::humanTurn(Player &p) {
             has_executed_action = true;
 
             if (p.getStatus() == "JAIL") {
-                // Roll dice WITHOUT moving – stay in jail unless double
-                if (manual) dice.setDice(d1, d2);
-                else        dice.throwDice();
-
-                bool isDouble = dice.isDouble();
-                cout << p.getUsername() << " melempar dadu: "
-                     << dice.getDie1() << " + " << dice.getDie2()
-                     << " = " << dice.getTotal()
-                     << (isDouble ? " (GANDA)" : "") << "\n";
-
-                {
-                    string diceDetail = "Lempar: " + to_string(dice.getDie1()) + "+"
-                                      + to_string(dice.getDie2()) + "=" + to_string(dice.getTotal())
-                                      + (isDouble ? " (double)" : "") + " [PENJARA]";
-                    addLog(p, "DADU", diceDetail);
-                }
-                if (isDouble) {
-                    // Exit jail, move with dice total
+                // 4th turn in jail: must pay fine before rolling
+                if (jail_turns.find(&p) == jail_turns.end()) jail_turns[&p] = 0;
+                if (jail_turns[&p] >= 3) {
+                    // Forced fine payment
+                    int fine = config.getJailFine();
+                    if (p.getBalance() >= fine) {
+                        p += -fine;
+                        p.setStatus("ACTIVE");
+                        cout << "Giliran ke-4 di penjara. Wajib bayar denda M" << fine << ".\n";
+                        addLog(p, "BAYAR_DENDA", "Paksa keluar M" + to_string(fine));
+                    } else {
+                        cout << "Giliran ke-4 di penjara. Wajib bayar denda M" << fine
+                             << " tapi saldo tidak cukup (M" << p.getBalance() << ")!\n";
+                        cmdBangkrut(p);
+                        turn_ended = true;
+                        break;
+                    }
+                    // Now roll and move normally
+                    if (manual) dice.setDice(d1, d2);
+                    else        dice.throwDice();
+                    cout << p.getUsername() << " melempar dadu: "
+                         << dice.getDie1() << " + " << dice.getDie2()
+                         << " = " << dice.getTotal() << "\n";
                     int jailTile = p.getCurrTile();
                     int newTile  = (jailTile + dice.getTotal()) % board.getTileCount();
                     p.setCurrTile(newTile);
                     applyGoSalary(p, jailTile);
-                    p.setStatus("ACTIVE");
                     jail_turns.erase(&p);
-                    cout << "Dadu ganda! Bebas dari penjara!\n";
-                    addLog(p, "PENJARA", "Bebas via double");
                     cmdCetakPapan();
                     applyLanding(p);
                     if (p.getStatus() == "BANKRUPT") { turn_ended = true; break; }
                     has_rolled = true;
                 } else {
-                    // Stay in jail; increment counter
-                    if (jail_turns.find(&p) == jail_turns.end()) jail_turns[&p] = 0;
-                    jail_turns[&p]++;
+                    // Attempts 1-3: roll, stay unless double
+                    if (manual) dice.setDice(d1, d2);
+                    else        dice.throwDice();
 
-                    if (jail_turns[&p] >= 4) {
-                        // 4th turn: pay fine and move with the rolled dice
-                        int fine = config.getJailFine();
-                        p += -fine;
-                        p.setStatus("ACTIVE");
+                    bool isDouble = dice.isDouble();
+                    cout << p.getUsername() << " melempar dadu: "
+                         << dice.getDie1() << " + " << dice.getDie2()
+                         << " = " << dice.getTotal()
+                         << (isDouble ? " (GANDA)" : "") << "\n";
+
+                    {
+                        string diceDetail = "Lempar: " + to_string(dice.getDie1()) + "+"
+                                          + to_string(dice.getDie2()) + "=" + to_string(dice.getTotal())
+                                          + (isDouble ? " (double)" : "") + " [PENJARA]";
+                        addLog(p, "DADU", diceDetail);
+                    }
+                    if (isDouble) {
+                        // Double: exit jail and move
                         int jailTile = p.getCurrTile();
                         int newTile  = (jailTile + dice.getTotal()) % board.getTileCount();
                         p.setCurrTile(newTile);
                         applyGoSalary(p, jailTile);
+                        p.setStatus("ACTIVE");
                         jail_turns.erase(&p);
-                        cout << "4 giliran di penjara. Denda otomatis M" << fine
-                             << ". Bergerak sesuai dadu.\n";
-                        addLog(p, "BAYAR_DENDA", "Paksa keluar M" + to_string(fine));
+                        cout << "Dadu ganda! Bebas dari penjara!\n";
+                        addLog(p, "PENJARA", "Bebas via double");
                         cmdCetakPapan();
                         applyLanding(p);
                         if (p.getStatus() == "BANKRUPT") { turn_ended = true; break; }
                         has_rolled = true;
                     } else {
+                        jail_turns[&p]++;
                         cout << p.getUsername() << " gagal keluar penjara (giliran ke-"
                              << jail_turns[&p] << "/3).\n";
                         addLog(p, "PENJARA", "Gagal keluar giliran " + to_string(jail_turns[&p]) + "/3");
@@ -1855,7 +1909,7 @@ void Origami::humanTurn(Player &p) {
                     }
                 }
             } else {
-                // Normal (non-jail) roll
+                // Normal roll (not in jail)
                 bool isDouble = rollAndMove(p, manual, d1, d2);
                 has_rolled = true;
                 {
@@ -1898,7 +1952,7 @@ void Origami::humanTurn(Player &p) {
 
         // post-roll commands
         } else if (cmd == "BELI") {
-            if (!has_rolled) cout << "Lempar dadu terlebih dahulu.\n";
+            if (!has_rolled && !moved_via_card) cout << "Lempar dadu terlebih dahulu.\n";
             else { cmdBeli(p); has_auction_done = true; }
         } else if (cmd == "BAYAR_SEWA") {
             // Sewa dibayar otomatis saat mendarat — tidak bisa dipanggil manual
@@ -1948,8 +2002,12 @@ void Origami::humanTurn(Player &p) {
             turn_ended = true;
 
         } else if (cmd == "SELESAI") {
-            if (!has_rolled && p.getStatus() != "JAIL" && !paid_fine_this_turn) {
-                cout << "Harus melempar dadu sebelum selesai.\n";
+            if (!has_rolled && !paid_fine_this_turn) {
+                if (p.getStatus() == "JAIL") {
+                    cout << "Anda dalam penjara! Harus LEMPAR_DADU untuk mencoba keluar atau BAYAR_DENDA.\n";
+                } else {
+                    cout << "Harus melempar dadu sebelum selesai.\n";
+                }
             } else if (has_rolled && hasPendingAction(p) && !has_auction_done) {
                 // Auto-trigger auction for declined STREET property
                 Tile *t = tiles[p.getCurrTile()];
@@ -2000,7 +2058,7 @@ void Origami::botTurn(Player &p, int consecDoubles) {
     cout << "\n=== Giliran Bot " << p.getUsername()
          << " (Turn " << current_turn << "/" << max_turn << ") ===\n";
 
-    // Skill card draw at start of turn (only if not jailed)
+    // Draw skill card at start of turn (not in jail)
     if (p.getStatus() != "JAIL") drawSkillCardAtTurnStart(p);
 
     // jail handling
@@ -2008,7 +2066,7 @@ void Origami::botTurn(Player &p, int consecDoubles) {
         if (jail_turns.find(&p) == jail_turns.end()) jail_turns[&p] = 0;
         int fine = config.getJailFine();
 
-        // 4th turn: forced pay if affordable, else stays bankrupt path
+        // 4th turn: must pay fine or go bankrupt
         if (jail_turns[&p] >= 3) {
             if (p.getBalance() >= fine) {
                 p += -fine;
@@ -2083,7 +2141,27 @@ void Origami::botTurn(Player &p, int consecDoubles) {
     applyLanding(p);
     if (p.getStatus() == "BANKRUPT") return;
 
-    // auto-buy: buy STREET if balance >= 2x buy price
+    // Bot: auto-select property for festival
+    if (tiles[p.getCurrTile()]->getTileType() == "FESTIVAL") {
+        auto myProps = p.getOwnedProperties();
+        PropertyTile *bestProp = nullptr;
+        for (auto *fp : myProps) {
+            if (!fp->isMortgage()) {
+                bestProp = fp;
+                break;
+            }
+        }
+        if (bestProp) {
+            cout << p.getUsername() << " (bot) memilih " << bestProp->getTileName()
+                 << " (" << bestProp->getTileCode() << ") untuk Festival.\n";
+            cmdFestival(p, bestProp->getTileCode(), 0, 0);
+            addLog(p, "FESTIVAL", bestProp->getTileCode());
+        } else {
+            cout << p.getUsername() << " (bot) tidak punya properti untuk Festival.\n";
+        }
+    }
+
+    // Auto-buy STREET if balance >= 2x price
     auto *prop = dynamic_cast<PropertyTile*>(tiles[p.getCurrTile()]);
     if (prop && !prop->getTileOwner() && !prop->isMortgage()
         && prop->getTileType() == "STREET") {
