@@ -22,6 +22,8 @@ public:
         int money = 0;
         std::string tile_code;
         std::string status;
+        bool is_bot = false;
+        int jail_turns = 0;
         std::vector<CardState> hand_cards;
     };
 

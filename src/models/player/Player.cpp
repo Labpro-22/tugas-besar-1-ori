@@ -16,7 +16,7 @@ void Player::move()
     curr_tile += dice.getTotal();
 }
 
-int Player::calculateNetWorth()
+int Player::calculateNetWorth() const
 {
     long long net_worth = balance;
 
@@ -80,6 +80,11 @@ float Player::getDiscountActive() { return discount_active; }
 bool Player::isShieldActive() { return shield_active; }
 void Player::setCurrTile(int tile) { curr_tile = tile; }
 void Player::addBalance(int amount) { balance += amount; }
+Player& Player::operator+=(int amount) { balance += amount; return *this; }
+bool Player::operator<(const Player& other) const { return calculateNetWorth() < other.calculateNetWorth(); }
+bool Player::operator>(const Player& other) const { return calculateNetWorth() > other.calculateNetWorth(); }
+bool Player::operator<=(const Player& other) const { return calculateNetWorth() <= other.calculateNetWorth(); }
+bool Player::operator>=(const Player& other) const { return calculateNetWorth() >= other.calculateNetWorth(); }
 void Player::setStatus(std::string newStatus) { status = newStatus; }
 void Player::setSkillUsed(bool used) { skill_used = used; }
 void Player::setDiscountActive(float discount) { discount_active = discount; }
@@ -135,7 +140,7 @@ void Player::clearTurnModifiers()
     shield_active = false;
 }
 
-int Player::getNetWorth()
+int Player::getNetWorth() const
 {
     return calculateNetWorth();
 }
@@ -155,4 +160,8 @@ bool Player::removeHandCard(int index) {
     if (index < 0 || index >= static_cast<int>(hand_cards.size())) return false;
     hand_cards.erase(hand_cards.begin() + index);
     return true;
+}
+
+void Player::clearHandCards() {
+    hand_cards.clear();
 }

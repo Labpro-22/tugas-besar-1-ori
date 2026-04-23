@@ -15,10 +15,10 @@ bool TaxManager::payTax(Player &payer, int amount)
     {
         int payment = payer.getBalance();
         payer.setStatus("BANKRUPT");
-        payer.addBalance(-payment);
+        payer += -payment;
         throw BankruptCauseBankException();
     }
 
-    payer.addBalance(-amount);
+    payer += -amount;
     return true;
 }

@@ -74,6 +74,18 @@ void CardManager::transfer(Player &from, Player &to, int amount)
         return;
     }
 
-    from.addBalance(-amount);
-    to.addBalance(amount);
+    if (from.getBalance() < amount && from.getStatus() != "BANKRUPT")
+    {
+        int paid = from.getBalance();
+        if (paid > 0)
+        {
+            from += -paid;
+            to += paid;
+        }
+    }
+    else
+    {
+        from += -amount;
+        to += amount;
+    }
 }

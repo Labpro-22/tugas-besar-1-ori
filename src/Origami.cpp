@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -255,9 +256,9 @@ void Origami::drawSkillCardAtTurnStart(Player &p) {
         card = new DemolitionCard();
     }
     skill_cards.push_back(card);
-    cout << p.getUsername() << " mendapatkan kartu kemampuan baru.\n";
+    cout << p.getUsername() << " mendapatkan kartu kemampuan baru: " << card->describe() << "\n";
     p.addHandCard(card);
-    addLog(p, "DRAW_KEMAMPUAN", kind);
+    addLog(p, "DRAW_KEMAMPUAN", kind + " - " + card->describe());
 
     // Enforce max 3 hand size
     if (p.getHandSize() > 3) {
@@ -297,7 +298,7 @@ Origami::promptNewGame(int initBalance) {
         char type = readChar("Tipe (H=Human, B=Bot): ", "HB");
         Player *p = (type == 'B') ? static_cast<Player*>(new Bot(name))
                                   : new Player(name);
-        p->addBalance(initBalance);
+        p->operator+=(initBalance);
         ps.push_back(p);
     }
 
@@ -323,8 +324,13 @@ Origami::buildPlayersFromState(const GameStates::SaveState &state) {
     map<string, Player*> byName;
 
     for (const auto &s : state.players) {
-        Player *p = new Player(s.username);
-        p->addBalance(s.money);
+        Player *p;
+        if (s.is_bot) {
+            p = new Bot(s.username);
+        } else {
+            p = new Player(s.username);
+        }
+        p->operator+=(s.money);
         p->setStatus(s.status);
         ps.push_back(p);
         byName[s.username] = p;
@@ -355,6 +361,40 @@ void Origami::applyPropertyState(const GameStates::SaveState &state) {
         if (it == byName.end()) continue;
         int idx = board.getTileIndex(ps.tile_code);
         if (idx >= 0) it->second->setCurrTile(idx);
+
+        // Restore hand cards
+        it->second->clearHandCards();
+        int boardSize = board.getTileCount();
+        for (const auto &cs : ps.hand_cards) {
+            SpecialPowerCard *card = nullptr;
+            if (cs.type == "MOVE") {
+                int val = cs.value.empty() ? 3 : std::stoi(cs.value);
+                card = new MoveCard(val, boardSize);
+            } else if (cs.type == "DISCOUNT") {
+                int val = cs.value.empty() ? 50 : std::stoi(cs.value);
+                card = new DiscountCard(val);
+            } else if (cs.type == "SHIELD") {
+                card = new ShieldCard();
+            } else if (cs.type == "TELEPORT") {
+                card = new TeleportCard();
+            } else if (cs.type == "LASSO") {
+                card = new LassoCard();
+            } else if (cs.type == "DEMOLITION") {
+                card = new DemolitionCard();
+            }
+            if (card) it->second->addHandCard(card);
+
+            // Restore discount duration
+            if (cs.type == "DISCOUNT" && !cs.remaining_duration.empty()) {
+                float disc = it->second->getDiscountActive();
+                // discount is already set by DiscountCard constructor
+            }
+        }
+
+        // Restore jail turns
+        if (ps.status == "JAIL" && ps.jail_turns > 0) {
+            jail_turns[it->second] = ps.jail_turns;
+        }
     }
 
     for (const auto &ps : state.properties) {
@@ -391,8 +431,8 @@ GameStates::SaveState Origami::buildSaveState() const {
             ps.tile_code = tiles[tidx]->getTileCode();
         for (auto *c : p->getHandCards()) {
             GameStates::CardState cs;
-            if      (dynamic_cast<MoveCard*>(c))        cs.type = "MOVE";
-            else if (dynamic_cast<DiscountCard*>(c))    cs.type = "DISCOUNT";
+            if      (dynamic_cast<MoveCard*>(c))      { cs.type = "MOVE"; cs.value = std::to_string(static_cast<MoveCard*>(c)->getMoveValue()); }
+            else if (dynamic_cast<DiscountCard*>(c))   { cs.type = "DISCOUNT"; cs.value = std::to_string(static_cast<DiscountCard*>(c)->getDiscountValue()); }
             else if (dynamic_cast<ShieldCard*>(c))      cs.type = "SHIELD";
             else if (dynamic_cast<TeleportCard*>(c))    cs.type = "TELEPORT";
             else if (dynamic_cast<LassoCard*>(c))       cs.type = "LASSO";
@@ -400,6 +440,9 @@ GameStates::SaveState Origami::buildSaveState() const {
             else                                         cs.type = "UNKNOWN";
             ps.hand_cards.push_back(cs);
         }
+        ps.is_bot = (dynamic_cast<Bot*>(p) != nullptr);
+        auto jt = jail_turns.find(p);
+        ps.jail_turns = (jt != jail_turns.end()) ? jt->second : 0;
         s.players.push_back(ps);
     }
 
@@ -460,7 +503,7 @@ bool Origami::rollAndMove(Player &p, bool manual, int d1, int d2) {
 void Origami::applyGoSalary(Player &p, int oldTile) {
     int newTile = p.getCurrTile();
     if (newTile < oldTile) {
-        p.addBalance(config.getGoSalary());
+        p += config.getGoSalary();
         cout << p.getUsername() << " melewati GO! Menerima gaji M"
              << config.getGoSalary() << ".\n";
         addLog(p, "GAJI_GO", "M" + to_string(config.getGoSalary()));
@@ -502,11 +545,17 @@ void Origami::applyLanding(Player &p) {
             cout << "Festival! Tapi Anda tidak punya properti yang bisa difestivalkan.\n";
         } else {
             cout << "Festival! Pilih properti Anda:\n";
-            for (auto *fp : myProps)
-                if (!fp->isMortgage())
+            for (auto *fp : myProps) {
+                if (!fp->isMortgage()) {
+                    int currentRent = computeRent(*fp, dice.getTotal());
+                    string propType = fp->getTileType();
+                    if (propType == "RAILROAD" || propType == "UTILITY")
+                        currentRent = computeRent(*fp, 1);
                     cout << "  [" << fp->getTileCode() << "] "
                          << fp->getTileName()
-                         << " (sewa sekarang M" << fp->calculateRent() << ")\n";
+                         << " (sewa sekarang M" << currentRent << ")\n";
+                }
+            }
             cout << "Gunakan: FESTIVAL <KODE>\n";
         }
 
@@ -540,7 +589,7 @@ void Origami::applyLanding(Player &p) {
             chance_deck.discardCard(card);
             if (p.getStatus() == "JAIL" && jail_turns.find(&p) == jail_turns.end())
                 jail_turns[&p] = 0;
-            if (p.getCurrTile() != before && p.getStatus() != "JAIL")
+            if (p.getCurrTile() != before && p.getStatus() != "JAIL" && p.getStatus() != "BANKRUPT")
                 applyLanding(p);
             addLog(p, "KARTU", "Kesempatan: " + card->describe());
         }
@@ -556,7 +605,12 @@ void Origami::applyLanding(Player &p) {
             cout << "+" << bar << "+\n";
             cout << "| " << leftPad(desc, boxW - 2) << " |\n";
             cout << "+" << bar << "+\n";
-            CardManager::resolveCardEffect(*card, p, players);
+            if (p.isShieldActive()) {
+                cout << "[SHIELD ACTIVE]: Efek ShieldCard melindungi Anda!\n";
+                cout << "Tagihan dari kartu Dana Umum dibatalkan. Uang Anda tetap: M" << p.getBalance() << ".\n";
+            } else {
+                CardManager::resolveCardEffect(*card, p, players);
+            }
             community_deck.discardCard(card);
             addLog(p, "KARTU", "Dana Umum: " + card->describe());
         }
@@ -617,7 +671,7 @@ void Origami::autoPayRent(Player &p, PropertyTile &prop) {
         if (isBot) {
             // Pay what you can
             int payment = p.getBalance();
-            if (payment > 0) { p.addBalance(-payment); owner->addBalance(payment); }
+            if (payment > 0) { p += -payment; owner->operator+=(payment); }
             cmdBangkrut(p);
         } else {
             cout << "Saldo tidak cukup untuk membayar sewa M" << rent << "!\n";
@@ -626,9 +680,10 @@ void Origami::autoPayRent(Player &p, PropertyTile &prop) {
         return;
     }
 
-    p.addBalance(-rent);
-    owner->addBalance(rent);
+    p += -rent;
+    owner->operator+=(rent);
     cout << p.getUsername() << " membayar sewa M" << rent << " ke " << owner->getUsername() << ".\n";
+    cout << "  Saldo " << p.getUsername() << ": M" << p.getBalance() << " | Saldo " << owner->getUsername() << ": M" << owner->getBalance() << "\n";
     int lvl = prop.getLevel();
     string lvlStr = (lvl == 0) ? "unimproved" : (lvl >= 5 ? "hotel" : to_string(lvl) + " rumah");
     string rentDetail = "Bayar M" + to_string(rent) + " ke " + owner->getUsername()
@@ -655,9 +710,14 @@ void Origami::recoverForRent(Player &p, PropertyTile &prop) {
         }
 
         cout << "Gadaikan atau lelang properti Anda dulu:\n";
-        cout << "  GADAI <kode>   - Gadaikan properti\n";
-        cout << "  LELANG <kode>  - Lelang properti milik Anda\n";
-        cout << "  BANGKRUT       - Menyerah\n";
+        cout << "  GADAI <kode>       - Gadaikan properti\n";
+        cout << "  LELANG <kode>      - Lelang properti milik Anda\n";
+        cout << "  JUAL <kode>        - Jual properti ke Bank (harga beli)\n";
+        cout << "  CETAK_PAPAN        - Lihat papan permainan\n";
+        cout << "  CETAK_AKTA <kode>  - Lihat akta properti\n";
+        cout << "  CETAK_PROPERTI     - Lihat daftar properti Anda\n";
+        cout << "  CETAK_PROFIL       - Lihat profil pemain (uang, status, dll)\n";
+        cout << "  BANGKRUT           - Menyerah\n";
         cout << "> ";
         string cmd;
         if (!(cin >> cmd)) { cmdBangkrut(p); return; }
@@ -669,20 +729,72 @@ void Origami::recoverForRent(Player &p, PropertyTile &prop) {
         } else if (cmd == "LELANG") {
             string code; cin >> code;
             cmdLelang(p, code);
+        } else if (cmd == "JUAL") {
+            string code; cin >> code;
+            Tile *t = board.getTileByCode(code);
+            auto *prop = dynamic_cast<PropertyTile*>(t);
+            if (!prop || prop->getTileOwner() != &p) {
+                cout << "Bukan properti Anda.\n";
+            } else {
+                int sellPrice = prop->getBuyPrice();
+                if (prop->getTileType() == "STREET" && prop->getLevel() > 0) {
+                    int buildingValue = 0;
+                    int lvl = prop->getLevel();
+                    if (lvl >= 5) {
+                        buildingValue = (4 * prop->getHouseCost()) + prop->getHotelCost();
+                    } else {
+                        buildingValue = lvl * prop->getHouseCost();
+                    }
+                    sellPrice += buildingValue / 2;
+                }
+                // Must sell buildings first if any exist on color group
+                if (prop->getTileType() == "STREET") {
+                    string cg = prop->getColorGroup();
+                    auto group = board.getPropertiesByColorGroup(cg);
+                    bool anyBuilding = false;
+                    for (auto *gp : group) if (gp->getLevel() > 0) { anyBuilding = true; break; }
+                    if (anyBuilding) {
+                        cout << "Masih ada bangunan di color group [" << cg << "]. Bangunan harus dijual dulu.\n";
+                        cout << "Gunakan GADAI untuk menjual bangunan, atau BANGUN untuk mengatur ulang.\n";
+                        continue;
+                    }
+                }
+                if (prop->isMortgage()) {
+                    cout << "Properti sedang digadaikan. Tebus dulu sebelum menjual.\n";
+                    continue;
+                }
+                p += sellPrice;
+                p.removeOwnedProperty(prop->getTileCode());
+                prop->setLevel(0);
+                prop->setMortgageStatus(false);
+                recomputeMonopolyForGroup(prop->getTileType() == "STREET" ? prop->getColorGroup() : "");
+                cout << "Properti " << code << " dijual ke Bank seharga M" << sellPrice << ".\n";
+                cout << "  Saldo " << p.getUsername() << ": M" << p.getBalance() << "\n";
+                addLog(p, "JUAL_BANK", code + " M" + to_string(sellPrice));
+            }
+        } else if (cmd == "CETAK_PAPAN") {
+            cmdCetakPapan();
+        } else if (cmd == "CETAK_AKTA") {
+            string code; cin >> code;
+            cmdCetakAkta(code);
+        } else if (cmd == "CETAK_PROPERTI") {
+            cmdCetakProperti(p);
+        } else if (cmd == "CETAK_PROFIL") {
+            formatter.printPlayerStatus(p);
         } else if (cmd == "BANGKRUT") {
             cmdBangkrut(p); return;
         } else {
-            cout << "Hanya GADAI, LELANG, atau BANGKRUT yang valid di sini.\n";
+            cout << "Perintah tidak dikenali.\n";
         }
     }
 
     if (p.getStatus() == "BANKRUPT") return;
 
     if (owner) {
-        p.addBalance(-rent);
-        owner->addBalance(rent);
+        p += -rent;
+        owner->operator+=(rent);
         cout << p.getUsername() << " membayar sewa M" << rent << " ke " << owner->getUsername() << ".\n";
-        addLog(p, "BAYAR_SEWA", prop.getTileCode() + " M" + to_string(rent));
+        addLog(p, "SEWA", prop.getTileCode() + " M" + to_string(rent));
     }
 }
 
@@ -728,7 +840,7 @@ void Origami::cmdBeli(Player &p) {
         interactiveLelang(nullptr, *prop, participants);
         return;
     }
-    p.addBalance(-price);
+    p += -price;
     p.addOwnedProperty(prop);
     recomputeMonopolyForGroup(prop->getColorGroup());
     cout << p.getUsername() << " membeli " << t->getTileName() << " seharga M" << price << ".\n";
@@ -761,10 +873,8 @@ void Origami::cmdBayarPajak(Player &p) {
 
         int choice;
         if (isBot) {
-            // Bot decision: choose flat if cheaper-looking
-            int wealth = p.getNetWorth();
-            int pct = static_cast<int>(wealth * config.getPphPercentage() / 100.0);
-            choice = (config.getPphFlat() <= pct) ? 1 : 2;
+            // Bot picks flat if balance < flat, percentage otherwise (simple heuristic without computing net worth first)
+            choice = (p.getBalance() < config.getPphFlat()) ? 1 : 2;
             cout << "Bot memilih opsi " << choice << ".\n";
         } else {
             choice = readInt("Pilihan (1/2): ", 1, 2);
@@ -791,7 +901,7 @@ void Origami::cmdBayarPajak(Player &p) {
     } else { cout << "Bukan petak pajak.\n"; return; }
 
     if (p.getBalance() >= amt) {
-        p.addBalance(-amt);
+        p += -amt;
         cout << p.getUsername() << " membayar pajak M" << amt << ".\n";
         addLog(p, "BAYAR_PAJAK", type + " M" + to_string(amt));
     } else {
@@ -842,7 +952,7 @@ void Origami::cmdGadai(Player &p, const string &code) {
                     int lvl = gp->getLevel();
                     int unitCost = (lvl >= 5) ? gp->getHotelCost() : gp->getHouseCost();
                     int refund = unitCost / 2;
-                    p.addBalance(refund);
+                    p += refund;
                     gp->setLevel(lvl - 1);
                     cout << "Bangunan " << gp->getTileName() << " level " << lvl
                          << " terjual. Diterima M" << refund << ".\n";
@@ -853,9 +963,10 @@ void Origami::cmdGadai(Player &p, const string &code) {
     }
 
     prop->setMortgageStatus(true);
-    p.addBalance(prop->getMortgageValue());
+    p += prop->getMortgageValue();
     recomputeMonopolyForGroup(cg);
     cout << "Properti " << code << " berhasil digadaikan. Diterima M" << prop->getMortgageValue() << ".\n";
+    cout << "  Saldo " << p.getUsername() << ": M" << p.getBalance() << "\n";
     addLog(p, "GADAI", code + " M" + to_string(prop->getMortgageValue()));
 }
 
@@ -867,13 +978,16 @@ void Origami::cmdTebus(Player &p, const string &code) {
         cout << "Properti tidak dapat ditebus.\n"; return;
     }
     int cost = prop->getBuyPrice();
+    if (cost <= 0) cost = prop->getMortgageValue() + (prop->getMortgageValue() / 2);
+    if (cost <= 0) { cout << "Properti ini tidak dapat ditebus (harga 0).\n"; return; }
     if (p.getBalance() < cost) {
         cout << "Saldo tidak cukup (perlu M" << cost << ").\n"; return;
     }
-    p.addBalance(-cost);
+    p += -cost;
     prop->setMortgageStatus(false);
     cout << "Properti " << code << " ditebus seharga M" << cost << ".\n";
-    addLog(p, "TEBUS", code);
+    cout << "  Saldo " << p.getUsername() << ": M" << p.getBalance() << "\n";
+    addLog(p, "TEBUS", code + " M" + to_string(cost));
 }
 
 void Origami::cmdBangun(Player &p, const string &code) {
@@ -1043,7 +1157,7 @@ void Origami::cmdBangun(Player &p, const string &code) {
             return;
         }
 
-        p.addBalance(-cost);
+        p += -cost;
         selectedProp->setLevel(currentLvl + 1);
 
         string buildType = (currentLvl >= 4) ? "Hotel" : "1 rumah";
@@ -1115,7 +1229,7 @@ void Origami::cmdBangun(Player &p, const string &code) {
         return;
     }
 
-    p.addBalance(-cost);
+    p += -cost;
     prop->setLevel(currentLvl + 1);
     string buildType = (currentLvl >= 4) ? "Hotel" : "1 rumah";
     cout << "Kamu membangun " << buildType << " di " << prop->getTileName() << ".\n";
@@ -1285,8 +1399,8 @@ void Origami::interactiveLelang(Player *seller, PropertyTile &prop,
                     consecPasses  = 0;
                 }
             } else {
-                cout << "Perintah tidak dikenal. Dianggap PASS.\n";
-                consecPasses++;
+                cout << "Perintah tidak dikenal. Silakan masukkan PASS atau BID <jumlah>.\n";
+                continue; // don't count as pass, allow retry
             }
         }
 
@@ -1298,7 +1412,7 @@ void Origami::interactiveLelang(Player *seller, PropertyTile &prop,
         return;
     }
 
-    highestBidder->addBalance(-highestBid);
+    highestBidder->operator+=(-highestBid);
     if (seller) seller->removeOwnedProperty(prop.getTileCode());
     highestBidder->addOwnedProperty(&prop);
     recomputeMonopolyForGroup(prop.getColorGroup());
@@ -1363,7 +1477,7 @@ void Origami::cmdBangkrut(Player &p) {
         p.setStatus("BANKRUPT");
         int cash = p.getBalance();
         if (cash > 0) {
-            p.addBalance(-cash);
+            p += -cash;
             cout << "Uang sisa M" << cash << " diserahkan ke Bank.\n";
         }
         // Snapshot properties (we'll release each before auctioning)
@@ -1391,10 +1505,18 @@ void Origami::cmdSimpan(const string &path, bool hasRolled) {
         GameStates::SavePermission perm;
         perm.has_rolled_dice     = hasRolled;
         perm.is_at_start_of_turn = !hasRolled;
-        FileManager::saveConfig(path, buildSaveState(), perm);
-        cout << "Game disimpan ke " << path << ".\n";
+
+        string fullpath = path;
+        if (path.find('/') == string::npos && path.find('\\') == string::npos) {
+            fullpath = "save/" + path;
+        }
+
+        filesystem::create_directories(filesystem::path(fullpath).parent_path());
+
+        FileManager::saveConfig(fullpath, buildSaveState(), perm);
+        cout << "Game disimpan ke " << fullpath << ".\n";
         if (active_player_id >= 0 && active_player_id < static_cast<int>(players.size()))
-            addLog(*players[active_player_id], "SIMPAN", path);
+            addLog(*players[active_player_id], "SIMPAN", fullpath);
     } catch (const exception &e) {
         cout << "Gagal menyimpan: " << e.what() << "\n";
     }
@@ -1412,7 +1534,7 @@ void Origami::cmdBayarDenda(Player &p) {
     if (p.getBalance() < fine) {
         cout << "Saldo tidak cukup (perlu M" << fine << ").\n"; return;
     }
-    p.addBalance(-fine);
+    p += -fine;
     p.setStatus("ACTIVE");
     jail_turns.erase(&p);
     cout << p.getUsername() << " membayar denda M" << fine
@@ -1426,15 +1548,120 @@ void Origami::cmdGunakanKemampuan(Player &p, int index) {
     try {
         SkillCardManager::useSkillCard(p);
     } catch (const exception &) {
-        cout << "Kamu sudah menggunakan kartu kemampuan pada giliran ini! Penggunaan dibatasi 1 kali per giliran.\n";
+        cout << "Kamu sudah menggunakan kartu kemampuan pada giliran ini! Penggunaan kartu dibatasi maksimal 1 kali dalam 1 giliran.\n";
         return;
     }
     int before = p.getCurrTile();
-    card->action(p);
-    p.removeHandCard(index);
-    if (p.getCurrTile() != before)
-        applyLanding(p);
-    addLog(p, "GUNAKAN_KEMAMPUAN", to_string(index + 1));
+    string cardDesc = card->describe();
+
+    if (dynamic_cast<TeleportCard*>(card)) {
+        p.removeHandCard(index);
+        cout << "TeleportCard: Pindah ke petak mana saja di papan.\n";
+        formatter.printBoard(board, players, current_turn, max_turn);
+        cout << "Daftar petak:\n";
+        for (int i = 0; i < board.getTileCount(); i++) {
+            Tile *t = tiles[i];
+            cout << "  " << i << ". [" << t->getTileCode() << "] " << t->getTileName() << "\n";
+        }
+        int target = readInt("Pilih nomor petak tujuan (0-" + to_string(board.getTileCount()-1) + "): ", 0, board.getTileCount()-1);
+        int oldTile = p.getCurrTile();
+        p.setCurrTile(target);
+        p.setSkillUsed(true);
+        applyGoSalary(p, oldTile);
+        cout << p.getUsername() << " berteleportasi ke [" << tiles[target]->getTileCode() << "] " << tiles[target]->getTileName() << "!\n";
+        if (p.getCurrTile() != before)
+            applyLanding(p);
+        addLog(p, "GUNAKAN_KEMAMPUAN", "TeleportCard -> " + string(tiles[target]->getTileCode()));
+    } else if (dynamic_cast<LassoCard*>(card)) {
+        p.removeHandCard(index);
+        vector<Player*> others;
+        for (auto *pl : players)
+            if (pl != &p && pl->getStatus() != "BANKRUPT") others.push_back(pl);
+        if (others.empty()) {
+            cout << "Tidak ada pemain lain yang bisa ditarik.\n";
+            addLog(p, "GUNAKAN_KEMAMPUAN", "LassoCard - tidak ada target");
+            return;
+        }
+        cout << "LassoCard: Tarik 1 pemain lain ke petak Anda.\n";
+        for (int i = 0; i < static_cast<int>(others.size()); i++)
+            cout << "  " << (i+1) << ". " << others[i]->getUsername() << " (petak " << others[i]->getCurrTile() << ")\n";
+        int target = readInt("Pilih nomor pemain (0 untuk batal): ", 0, static_cast<int>(others.size()));
+        if (target == 0) {
+            cout << "LassoCard dibatalkan.\n";
+            addLog(p, "GUNAKAN_KEMAMPUAN", "LassoCard - dibatalkan");
+            return;
+        }
+        Player *targetPlayer = others[target-1];
+        int myTile = p.getCurrTile();
+        int oldTargetTile = targetPlayer->getCurrTile();
+        targetPlayer->setCurrTile(myTile);
+        p.setSkillUsed(true);
+        cout << targetPlayer->getUsername() << " ditarik ke petak " << myTile << " [" << tiles[myTile]->getTileCode() << "]!\n";
+        addLog(p, "GUNAKAN_KEMAMPUAN", "LassoCard -> " + targetPlayer->getUsername());
+    } else if (dynamic_cast<DemolitionCard*>(card)) {
+        p.removeHandCard(index);
+        auto myProps = p.getOwnedProperties();
+        vector<pair<Player*, vector<PropertyTile*>>> opponentsWithBuildings;
+        for (auto *pl : players) {
+            if (pl == &p || pl->getStatus() == "BANKRUPT") continue;
+            vector<PropertyTile*> built;
+            for (auto *prop : pl->getOwnedProperties())
+                if (prop->getLevel() > 0) built.push_back(prop);
+            if (!built.empty()) opponentsWithBuildings.push_back({pl, built});
+        }
+        if (opponentsWithBuildings.empty()) {
+            cout << "Tidak ada bangunan lawan yang bisa dihancurkan.\n";
+            addLog(p, "GUNAKAN_KEMAMPUAN", "DemolitionCard - tidak ada target");
+            return;
+        }
+        cout << "DemolitionCard: Hancurkan 1 bangunan di properti lawan.\n";
+        for (int i = 0; i < static_cast<int>(opponentsWithBuildings.size()); i++) {
+            auto &[pl, built] = opponentsWithBuildings[i];
+            cout << "  " << (i+1) << ". " << pl->getUsername() << ":\n";
+            for (auto *prop : built) {
+                string lvlStr = (prop->getLevel() >= 5) ? "Hotel" : to_string(prop->getLevel()) + " rumah";
+                cout << "      [" << prop->getTileCode() << "] " << prop->getTileName() << " - " << lvlStr << "\n";
+            }
+        }
+        int oppIdx = readInt("Pilih nomor pemain lawan (0 untuk batal): ", 0, static_cast<int>(opponentsWithBuildings.size()));
+        if (oppIdx == 0) {
+            cout << "DemolitionCard dibatalkan.\n";
+            addLog(p, "GUNAKAN_KEMAMPUAN", "DemolitionCard - dibatalkan");
+            return;
+        }
+        auto &[targetPlayer, built] = opponentsWithBuildings[oppIdx-1];
+        for (int j = 0; j < static_cast<int>(built.size()); j++) {
+            string lvlStr = (built[j]->getLevel() >= 5) ? "Hotel" : to_string(built[j]->getLevel()) + " rumah";
+            cout << "  " << (j+1) << ". [" << built[j]->getTileCode() << "] " << built[j]->getTileName() << " - " << lvlStr << "\n";
+        }
+        int propIdx = readInt("Pilih bangunan yang ingin dihancurkan (0 untuk batal): ", 0, static_cast<int>(built.size()));
+        if (propIdx == 0) {
+            cout << "DemolitionCard dibatalkan.\n";
+            addLog(p, "GUNAKAN_KEMAMPUAN", "DemolitionCard - dibatalkan");
+            return;
+        }
+        PropertyTile *targetProp = built[propIdx-1];
+        targetProp->setLevel(targetProp->getLevel() - 1);
+        string newLvl = (targetProp->getLevel() >= 5) ? "Hotel" : (targetProp->getLevel() == 0 ? "tanah kosong" : to_string(targetProp->getLevel()) + " rumah");
+        cout << "Bangunan di [" << targetProp->getTileCode() << "] " << targetProp->getTileName() << " dihancurkan! Sekarang: " << newLvl << ".\n";
+        p.setSkillUsed(true);
+        addLog(p, "GUNAKAN_KEMAMPUAN", "DemolitionCard -> " + targetProp->getTileCode());
+    } else {
+        card->action(p);
+        p.removeHandCard(index);
+        if (dynamic_cast<ShieldCard*>(card)) {
+            cout << "ShieldCard diaktifkan! Anda kebal terhadap tagihan atau sanksi selama giliran ini.\n";
+        } else if (dynamic_cast<DiscountCard*>(card)) {
+            cout << "DiscountCard diaktifkan! " << cardDesc << "\n";
+        } else if (dynamic_cast<MoveCard*>(card)) {
+            cout << "MoveCard digunakan! " << cardDesc << "\n";
+        } else {
+            cout << "Kartu kemampuan digunakan: " << cardDesc << "\n";
+        }
+        if (p.getCurrTile() != before)
+            applyLanding(p);
+        addLog(p, "GUNAKAN_KEMAMPUAN", cardDesc);
+    }
 }
 
 void Origami::cmdDropKemampuan(Player &p, int index) {
@@ -1475,6 +1702,11 @@ void Origami::humanTurn(Player &p) {
     cout << "[Tip: ketik SIMPAN <file> sekarang untuk menyimpan sebelum giliran dimulai]\n";
 
     while (!turn_ended && !game_over) {
+        if (p.getStatus() == "BANKRUPT") {
+            cout << p.getUsername() << " bangkrut! Giliran berakhir.\n";
+            turn_ended = true;
+            break;
+        }
         string cmd;
         cout << "> ";
         if (!(cin >> cmd)) { game_over = true; break; }
@@ -1500,8 +1732,15 @@ void Origami::humanTurn(Player &p) {
             cmdCetakAkta(code);
         } else if (cmd == "CETAK_PROPERTI") {
             cmdCetakProperti(p);
+        } else if (cmd == "CETAK_PROFIL") {
+            formatter.printPlayerStatus(p);
         } else if (cmd == "CETAK_LOG") {
-            cmdCetakLog();
+            int n = -1;
+            if (cin.peek() != '\n') {
+                int tmp;
+                if (cin >> tmp) n = tmp;
+            }
+            formatter.printLog(transaction_log, n);
         } else if (cmd == "SIMPAN") {
             string slot; cin >> slot;
             if (has_executed_action || has_rolled) {
@@ -1523,10 +1762,18 @@ void Origami::humanTurn(Player &p) {
         } else if (cmd == "GUNAKAN_KEMAMPUAN") {
             if (has_rolled) {
                 cout << "Kartu kemampuan hanya bisa digunakan SEBELUM melempar dadu.\n";
+            } else if (p.getHandSize() == 0) {
+                cout << "Anda tidak memiliki kartu kemampuan.\n";
             } else {
-                int idx; cin >> idx;
-                cmdGunakanKemampuan(p, idx - 1);
-                has_executed_action = true;
+                cout << "\nDaftar Kartu Kemampuan Spesial Anda:\n";
+                for (int i = 0; i < p.getHandSize(); i++) {
+                    auto *c = p.getHandCard(i);
+                    cout << "  " << (i + 1) << ". " << (c ? c->describe() : "?") << "\n";
+                }
+                cout << "  0. Batal\n";
+                int idx = readInt("Pilih kartu yang ingin digunakan (0-" + to_string(p.getHandSize()) + "): ", 0, p.getHandSize());
+                if (idx == 0) { cout << "Dibatalkan.\n"; }
+                else { cmdGunakanKemampuan(p, idx - 1); has_executed_action = true; }
             }
         } else if (cmd == "DROP_KEMAMPUAN") {
             int idx; cin >> idx;
@@ -1575,6 +1822,7 @@ void Origami::humanTurn(Player &p) {
                     addLog(p, "PENJARA", "Bebas via double");
                     cmdCetakPapan();
                     applyLanding(p);
+                    if (p.getStatus() == "BANKRUPT") { turn_ended = true; break; }
                     has_rolled = true;
                 } else {
                     // Stay in jail; increment counter
@@ -1584,7 +1832,7 @@ void Origami::humanTurn(Player &p) {
                     if (jail_turns[&p] >= 4) {
                         // 4th turn: pay fine and move with the rolled dice
                         int fine = config.getJailFine();
-                        p.addBalance(-fine);
+                        p += -fine;
                         p.setStatus("ACTIVE");
                         int jailTile = p.getCurrTile();
                         int newTile  = (jailTile + dice.getTotal()) % board.getTileCount();
@@ -1596,6 +1844,7 @@ void Origami::humanTurn(Player &p) {
                         addLog(p, "BAYAR_DENDA", "Paksa keluar M" + to_string(fine));
                         cmdCetakPapan();
                         applyLanding(p);
+                        if (p.getStatus() == "BANKRUPT") { turn_ended = true; break; }
                         has_rolled = true;
                     } else {
                         cout << p.getUsername() << " gagal keluar penjara (giliran ke-"
@@ -1635,6 +1884,7 @@ void Origami::humanTurn(Player &p) {
                     } else {
                         cmdCetakPapan();
                         applyLanding(p);
+                        if (p.getStatus() == "BANKRUPT") { turn_ended = true; break; }
                         addLog(p, "DOUBLE", "Giliran tambahan ke-" + to_string(consec_doubles));
                         cout << "\n[Dadu ganda dari lemparan ini - giliran tambahan setelah SELESAI]\n";
                         has_bonus_turn = true;
@@ -1642,6 +1892,7 @@ void Origami::humanTurn(Player &p) {
                 } else {
                     cmdCetakPapan();
                     applyLanding(p);
+                    if (p.getStatus() == "BANKRUPT") { turn_ended = true; }
                 }
             }
 
@@ -1664,11 +1915,34 @@ void Origami::humanTurn(Player &p) {
                 cout << "Festival sudah digunakan pada giliran ini.\n";
             } else if (tiles[p.getCurrTile()]->getTileType() != "FESTIVAL") {
                 cout << "Hanya bisa digunakan saat berdiri di petak Festival.\n";
+            } else if (p.getOwnedProperties().empty()) {
+                cout << "Anda tidak punya properti yang bisa difestivalkan.\n";
             } else {
                 string code; cin >> code;
                 cmdFestival(p, code, 0, 0);
                 has_festival_used = true;
             }
+        } else if (cmd == "BANTUAN" || cmd == "HELP") {
+            cout << "\n=== Daftar Perintah Nimonspoli ===\n";
+            cout << "  CETAK_PAPAN            - Tampilkan papan permainan\n";
+            cout << "  CETAK_AKTA <kode>      - Tampilkan akta kepemilikan properti\n";
+            cout << "  CETAK_PROPERTI         - Tampilkan daftar properti Anda\n";
+            cout << "  CETAK_PROFIL          - Tampilkan profil pemain (uang, status, dll)\n";
+            cout << "  CETAK_LOG [n]          - Tampilkan log transaksi (n = jumlah terakhir)\n";
+            cout << "  LEMPAR_DADU            - Lempar dadu secara acak\n";
+            cout << "  ATUR_DADU <d1> <d2>    - Atur nilai dadu (1-6)\n";
+            cout << "  BELI                   - Beli properti (setelah mendarat)\n";
+            cout << "  GADAI <kode>           - Gadaikan properti\n";
+            cout << "  TEBUS <kode>           - Tebus properti yang digadaikan\n";
+            cout << "  BANGUN                 - Bangun rumah/hotel\n";
+            cout << "  LELANG <kode>          - Lelang properti\n";
+            cout << "  FESTIVAL <kode>        - Aktifkan festival (di petak Festival)\n";
+            cout << "  GUNAKAN_KEMAMPUAN      - Gunakan kartu kemampuan\n";
+            cout << "  DROP_KEMAMPUAN <idx>   - Buang kartu kemampuan\n";
+            cout << "  BAYAR_DENDA            - Bayar denda penjara (di penjara)\n";
+            cout << "  SIMPAN <file>          - Simpan game\n";
+            cout << "  SELESAI                - Akhiri giliran\n";
+            cout << "  BANTUAN                - Tampilkan daftar perintah ini\n\n";
         } else if (cmd == "BANGKRUT") {
             cmdBangkrut(p);
             turn_ended = true;
@@ -1722,7 +1996,7 @@ void Origami::humanTurn(Player &p) {
 }
 
 // ── botTurn ───────────────────────────────────────────────────────────────────
-void Origami::botTurn(Player &p) {
+void Origami::botTurn(Player &p, int consecDoubles) {
     cout << "\n=== Giliran Bot " << p.getUsername()
          << " (Turn " << current_turn << "/" << max_turn << ") ===\n";
 
@@ -1737,7 +2011,7 @@ void Origami::botTurn(Player &p) {
         // 4th turn: forced pay if affordable, else stays bankrupt path
         if (jail_turns[&p] >= 3) {
             if (p.getBalance() >= fine) {
-                p.addBalance(-fine);
+                p += -fine;
                 p.setStatus("ACTIVE");
                 jail_turns.erase(&p);
                 cout << p.getUsername() << " (bot) WAJIB membayar denda M" << fine
@@ -1746,9 +2020,10 @@ void Origami::botTurn(Player &p) {
                 // Roll and move
                 bool isDouble = rollAndMove(p, false);
                 applyLanding(p);
+                if (p.getStatus() == "BANKRUPT") return;
                 if (isDouble && p.getStatus() != "JAIL" && p.getStatus() != "BANKRUPT") {
                     cout << p.getUsername() << " (bot) mendapat giliran tambahan!\n";
-                    botTurn(p);
+                    botTurn(p, 0);
                 }
             } else {
                 cout << p.getUsername() << " (bot) tidak mampu bayar denda. Bangkrut.\n";
@@ -1781,25 +2056,28 @@ void Origami::botTurn(Player &p) {
             addLog(p, "DADU", "Lempar: " + to_string(dice.getDie1()) + "+"
                    + to_string(dice.getDie2()) + " [PENJARA] keluar");
             applyLanding(p);
+            if (p.getStatus() == "BANKRUPT") return;
         }
         return;
     }
 
-    int consec_doubles = 0;
+    int newConsec = consecDoubles;
     bool isDouble = rollAndMove(p, false);
 
-    // 3 consecutive doubles → jail (current call only counts 1, but recursion bumps)
-    // For bots without explicit counter, simplify: only count within this call.
-    if (isDouble) consec_doubles = 1;
-
-    if (consec_doubles >= 3) {
-        // Should not occur in this single-call iteration, kept for completeness
-        int jailIdx = 0;
-        for (int i = 0; i < board.getTileCount(); i++)
-            if (tiles[i]->getTileType() == "JAIL") { jailIdx = i; break; }
-        JailManager::goToJail(p, jailIdx);
-        jail_turns[&p] = 0;
-        return;
+    if (isDouble) {
+        newConsec++;
+        if (newConsec >= 3) {
+            int jailIdx = 0;
+            for (int i = 0; i < board.getTileCount(); i++)
+                if (tiles[i]->getTileType() == "JAIL") { jailIdx = i; break; }
+            JailManager::goToJail(p, jailIdx);
+            jail_turns[&p] = 0;
+            cout << p.getUsername() << " (bot) 3 dadu ganda berturut-turut! Masuk penjara!\n";
+            addLog(p, "MASUK_PENJARA", "3x double berturut-turut");
+            return;
+        }
+    } else {
+        newConsec = 0;
     }
 
     applyLanding(p);
@@ -1825,21 +2103,28 @@ void Origami::botTurn(Player &p) {
     // bonus turn on double
     if (isDouble && p.getStatus() != "JAIL" && p.getStatus() != "BANKRUPT") {
         cout << p.getUsername() << " (bot) mendapat giliran tambahan!\n";
-        botTurn(p);
+        botTurn(p, newConsec);
     }
 }
 
 // ── nextTurn ──────────────────────────────────────────────────────────────────
 void Origami::nextTurn() {
-    // decrement festival durations; reset multiplier when expires
+    // decrement festival durations — only count full rounds for the owner
+    // Festival "3 giliran" means 3 of the OWNER's turns, not 3 arbitrary turns
+    Player *currentPlayer = turn_order[turn_order_idx];
+
     for (auto *t : tiles) {
         auto *prop = dynamic_cast<PropertyTile*>(t);
         if (!prop || prop->getFestivalDuration() <= 0) continue;
-        int newDur = prop->getFestivalDuration() - 1;
-        if (newDur <= 0) {
-            prop->setFestivalState(1, 0);
-        } else {
-            prop->setFestivalState(prop->getFestivalMultiplier(), newDur);
+        Player *owner = prop->getTileOwner();
+        // Decrement duration only when the festival owner's turn ends
+        if (!owner || owner == currentPlayer) {
+            int newDur = prop->getFestivalDuration() - 1;
+            if (newDur <= 0) {
+                prop->setFestivalState(1, 0);
+            } else {
+                prop->setFestivalState(prop->getFestivalMultiplier(), newDur);
+            }
         }
     }
 
@@ -1932,6 +2217,9 @@ void Origami::run() {
         string savePath;
         cout << "Path file save: ";
         cin >> savePath;
+        if (savePath.find('/') == string::npos && savePath.find('\\') == string::npos) {
+            savePath = "save/" + savePath;
+        }
         try {
             auto state = FileManager::loadConfig(savePath);
             auto tiles = FileManager::loadBoard(configDir);

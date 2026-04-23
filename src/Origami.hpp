@@ -62,7 +62,7 @@ private:
     // ── turn logic ────────────────────────────────────────────────────────────
     void start();
     void humanTurn(Player &p);
-    void botTurn(Player &p);
+    void botTurn(Player &p, int consecDoubles = 0);
     bool rollAndMove(Player &p, bool manual, int d1 = 0, int d2 = 0);
     void applyLanding(Player &p);
     void applyGoSalary(Player &p, int oldTile);

@@ -28,12 +28,12 @@ bool RentManager::payRent(Player &buyer, Player &owner, Tile &tile)
     {
         int payment = buyer.getBalance();
         buyer.setStatus("BANKRUPT");
-        buyer.addBalance(-payment);
-        owner.addBalance(payment);
+        buyer += -payment;
+        owner += payment;
         throw BankruptCausePlayerException();
     }
 
-    buyer.addBalance(-rent);
-    owner.addBalance(rent);
+    buyer += -rent;
+    owner += rent;
     return true;
 }

@@ -9,8 +9,9 @@
 class AuctionManager
 {
 public:
-    struct AuctionResult
+    class AuctionResult
     {
+    public:
         bool sold = false;
         Player *winner = nullptr;
         int final_bid = 0;

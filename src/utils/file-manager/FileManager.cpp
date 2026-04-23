@@ -122,7 +122,7 @@ void FileManager::saveConfig(
 
     for (const GameStates::PlayerState &player : state.players)
     {
-        output << player.username << " " << player.money << " " << player.tile_code << " " << player.status << "\n";
+        output << player.username << " " << player.money << " " << player.tile_code << " " << player.status << " " << (player.is_bot ? "1" : "0") << " " << player.jail_turns << "\n";
         output << player.hand_cards.size() << "\n";
         for (const GameStates::CardState &card : player.hand_cards)
             writeCardState(output, card);
@@ -191,13 +191,16 @@ GameStates::SaveState FileManager::loadConfig(
     {
         line = readNextNonemptyLine(input, line_number);
         tokens = splitByWhiteSpace(line);
-        if (tokens.size() != 4) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS>'.");
+        // Support both old format (4 tokens) and new format (5-6 tokens with is_bot, jail_turns)
+        if (tokens.size() < 4 || tokens.size() > 6) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS> [IS_BOT] [JAIL_TURNS]'.");
 
         GameStates::PlayerState player;
         player.username = tokens[0];
         player.money = parseIntegerToken(tokens[1], "UANG", line_number);
         player.tile_code = tokens[2];
         player.status = tokens[3];
+        player.is_bot = (tokens.size() >= 5 && tokens[4] == "1");
+        player.jail_turns = (tokens.size() >= 6) ? parseIntegerToken(tokens[5], "JAIL_TURNS", line_number) : 0;
 
         line = readNextNonemptyLine(input, line_number);
         tokens = splitByWhiteSpace(line);
@@ -301,7 +304,8 @@ GameStates::SaveState FileManager::loadConfig(
 std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
 {
     // --- 1. Parse property.txt → keyed by tile code ---
-    struct PropData {
+    class PropData {
+    public:
         std::string name, type, color;
         int price = 0, mortgage = 0, houseCost = 0, hotelCost = 0;
         std::vector<int> rent;
@@ -348,7 +352,7 @@ std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
     // --- 2a. Try aksi.txt + property.txt first (Revisi 2 spec). ---
     // aksi.txt columns: ID KODE NAMA JENIS_PETAK WARNA
     // We map JENIS_PETAK → internal type strings.
-    struct AksiData { std::string code, name, jenis; };
+    class AksiData { public: std::string code, name, jenis; };
     std::map<int, AksiData> aksiByPos;
     {
         std::ifstream af(configDir + "aksi.txt");
@@ -393,7 +397,7 @@ std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
         for (const auto &[code, d] : props) (void)d, (void)code; // props uses code as key; we need positions from property.txt itself
 
         // Re-parse property.txt to get positions
-        struct PropPos { int pos; std::string code; };
+        class PropPos { public: int pos; std::string code; };
         std::vector<PropPos> propPositions;
         {
             std::ifstream pf(configDir + "property.txt");

@@ -1,4 +1,4 @@
-#include "OutputFormatter.hpp"
+#include "include/views/OutputFormatter.hpp"
 #include "../../include/models/tiles/PropertyTile.hpp"
 #include <climits>
 #include <vector>
@@ -229,7 +229,14 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
         string line_1 = "[" + color_code + "] " + t->getTileCode();
 
         string line_2 = "";
-        if (pt && pt->getTileOwner() != nullptr) {
+        if (pt && pt->getTileOwner() != nullptr && pt->getTileOwner()->getStatus() != "BANKRUPT") {
+            string p_num = "P?";
+            for (int i = 0; i < (int)players.size(); i++)
+                if (players[i] == pt->getTileOwner()) { p_num = "P" + to_string(i+1); break; }
+            int lvl = pt->getLevel();
+            string lvl_str = (lvl >= 4) ? "*" : string(lvl, '^');
+            line_2 = p_num + (lvl_str.empty() ? "" : " " + lvl_str);
+        } else if (pt && pt->getTileOwner() != nullptr) {
             string p_num = "P?";
             for (int i = 0; i < (int)players.size(); i++)
                 if (players[i] == pt->getTileOwner()) { p_num = "P" + to_string(i+1); break; }
@@ -239,7 +246,7 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
         }
         string tokens = "";
         for (int i = 0; i < (int)players.size(); i++)
-            if (players[i]->getCurrTile() == idx) tokens += "(" + to_string(i+1) + ")";
+            if (players[i]->getCurrTile() == idx && players[i]->getStatus() != "BANKRUPT") tokens += "(" + to_string(i+1) + ")";
         if (!tokens.empty()) line_2 += (line_2.empty() ? "" : " ") + tokens;
 
         return renderTile(line_1, line_2, color_group, t->getTileType(), w, h);
@@ -377,11 +384,12 @@ void OutputFormatter::printProperty(Player &p, Board &b){
     for(auto& [group, tiles] : grouped){
         string color = getGroupColor(group);
         cout << color << "[" << group << "]" << reset << "\n";
-        for(auto& tile : tiles){
-            string status = tile->isMortgage() ? "MORTGAGED [M]" : "OWNED"; //TODO: adjust to actual method name
-            string label = tile->getTileName() + " (" + tile->getTileCode() + ")";
-            cout << "  - " << leftOut(label, 30) << leftOut("MXXX", 8) << status << "\n";
-            total += tile->getBuyPrice(); //TODO: adjust to actual method name
+for(auto& tile : tiles){
+        string status = tile->isMortgage() ? "MORTGAGED [M]" : "OWNED"; //TODO: adjust to actual method name
+        string label = tile->getTileName() + " (" + tile->getTileCode() + ")";
+        string priceStr = "M" + to_string(tile->getBuyPrice());
+        cout << "  - " << leftOut(label, 30) << leftOut(priceStr, 8) << status << "\n";
+        total += tile->getBuyPrice(); //TODO: adjust to actual method name
         }
         cout << "\n";
     }
@@ -478,13 +486,30 @@ void OutputFormatter::printWin(vector<Player> &ps, bool is_bankruptcy){
 }
 
 void OutputFormatter::printPlayerStatus(Player &p) {
-    cout << yellow << "=== Status Pemain: " << p.getUsername() << " ===" << reset << "\n";
+    cout << yellow << "=== Profil Pemain: " << p.getUsername() << " ===" << reset << "\n";
     cout << leftOut("Saldo",    12) << ": M" << p.getBalance() << "\n";
     cout << leftOut("Status",   12) << ": "  << p.getStatus()  << "\n";
     cout << leftOut("Properti", 12) << ": "  << p.getOwnedProperties().size() << " petak\n";
     cout << leftOut("Net Worth", 12) << ": M" << p.getNetWorth() << "\n";
     if (p.getHandSize() > 0) {
         cout << leftOut("Kartu Kemampuan", 12) << ": " << p.getHandSize() << " kartu\n";
+        for (int i = 0; i < p.getHandSize(); i++) {
+            auto *card = p.getHandCard(i);
+            if (card) cout << "  " << (i+1) << ". " << card->describe() << "\n";
+        }
+    }
+    if (p.getStatus() == "JAIL") {
+        cout << leftOut("Penjara", 12) << ": Dalam penjara\n";
+    }
+    const auto &props = p.getOwnedProperties();
+    if (!props.empty()) {
+        cout << "\nDaftar Properti:\n";
+        for (auto *pt : props) {
+            if (!pt) continue;
+            string lvlStr = (pt->getLevel() >= 5) ? "Hotel" : (pt->getLevel() > 0 ? to_string(pt->getLevel()) + " rumah" : "tanah");
+            string mortgageStr = pt->isMortgage() ? " [GADAI]" : "";
+            cout << "  - " << pt->getTileName() << " (" << pt->getTileCode() << ") " << lvlStr << mortgageStr << "\n";
+        }
     }
     cout << "\n";
 }

@@ -113,8 +113,8 @@ void EventManager::transferAsset(Player &p1, Player &p2)
     int remaining_cash = p1.getBalance();
     if (remaining_cash > 0)
     {
-        p1.addBalance(-remaining_cash);
-        p2.addBalance(remaining_cash);
+        p1 += -remaining_cash;
+        p2 += remaining_cash;
         pushEvent(p1.getUsername() + " transfers M" + std::to_string(remaining_cash) + " cash to " + p2.getUsername() + ".");
     }
 
@@ -147,7 +147,7 @@ void EventManager::processBankruptcy(Player &debtor, const std::vector<Player *>
     int remaining_cash = debtor.getBalance();
     if (remaining_cash > 0)
     {
-        debtor.addBalance(-remaining_cash);
+        debtor += -remaining_cash;
         pushEvent(debtor.getUsername() + " forfeits M" + std::to_string(remaining_cash) + " cash to the Bank.");
     }
     destroyAllBuildingsAndUnmortgage(debtor);

@@ -45,3 +45,7 @@ bin/
 
 # clangd
 .clangd
+
+# Save files
+save/*.txt
+bugs.md
