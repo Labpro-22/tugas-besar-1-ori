@@ -7,8 +7,21 @@
 #include <iomanip>
 using namespace std;
 
+namespace {
+    int visibleLength(const string &str) {
+        int len = 0;
+        bool inEsc = false;
+        for (char c : str) {
+            if (c == '\033') inEsc = true;
+            else if (inEsc && c == 'm') inEsc = false;
+            else if (!inEsc) len++;
+        }
+        return len;
+    }
+}
+
 string OutputFormatter::centerOut(string str, int width){
-    int text_length = str.size();
+    int text_length = visibleLength(str);
 
     //truncate if too long
     if(text_length > width){
@@ -21,7 +34,7 @@ string OutputFormatter::centerOut(string str, int width){
     return string(lpad, ' ') + str + string(rpad, ' ');
 }
 string OutputFormatter::leftOut(string str, int width){
-    int text_length = str.size();
+    int text_length = visibleLength(str);
 
     //truncate if too long
     if(text_length > width){
@@ -106,24 +119,45 @@ string OutputFormatter::generateCode(string color_group) {
     return final_code;
 }
 
-string OutputFormatter::getGroupColor(string color_group){
-    if (color_group == "ABU_ABU") return "\033[1;90m";
+string OutputFormatter::getGroupColor(string color_group, string tile_type){
+    if (color_group == "ABU_ABU") {
+        if (tile_type == "UTILITY") return "\033[38;5;45m";
+        return "\033[38;5;250m";
+    }
     if (color_group_ansi.find(color_group) != color_group_ansi.end()) {
         return color_group_ansi[color_group];
     }
+    if (tile_type == "RAILROAD") return "\033[38;5;208m";
+    if (tile_type == "UTILITY") return "\033[38;5;45m";
+    if (tile_type == "START") return "\033[38;5;226m";
+    if (tile_type == "JAIL") return "\033[38;5;124m";
+    if (tile_type == "GO_JAIL") return "\033[38;5;196m";
+    if (tile_type == "FREE_PARKING") return "\033[38;5;28m";
+    if (tile_type == "FESTIVAL") return "\033[38;5;201m";
+    if (tile_type == "CHANCE") return "\033[38;5;51m";
+    if (tile_type == "COMMUNITY_CHEST") return "\033[38;5;94m";
+    if (tile_type == "TAX_PPH" || tile_type == "TAX_PBM") return "\033[38;5;82m";
     return "\033[0m";
 }
 string OutputFormatter::getColorCode(string color_group, string tile_type){
-    if (tile_type == "UTILITY" || color_group == "ABU_ABU") return "AB";
+    if (tile_type == "UTILITY") return "UT";
     if (color_group_codes.find(color_group) != color_group_codes.end()) {
         return color_group_codes[color_group];
     }
+    if (tile_type == "RAILROAD") return "RR";
+    if (tile_type == "START") return "GO";
+    if (tile_type == "JAIL") return "JL";
+    if (tile_type == "GO_JAIL") return "GJ";
+    if (tile_type == "FREE_PARKING") return "FP";
+    if (tile_type == "FESTIVAL") return "FS";
+    if (tile_type == "CHANCE") return "CH";
+    if (tile_type == "COMMUNITY_CHEST") return "CC";
+    if (tile_type == "TAX_PPH" || tile_type == "TAX_PBM") return "TX";
     return "DF";
 }
 
 vector<string> OutputFormatter::renderTile(string line_1, string line_2, string color_group, string tile_type, int w, int h) {
-    string color  = getGroupColor(color_group);
-    if(color_group == "" && tile_type == "UTILITY") color = "\033[1;90m"; // fallback for pure utility
+    string color  = getGroupColor(color_group, tile_type);
     string border = color + "+" + string(w, '-') + "+" + reset;
     string empty  = color + "|" + string(w, ' ') + "|" + reset;
 
@@ -193,7 +227,8 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
         padL("^     : Rumah Level 1"),
         padL("^^    : Rumah Level 2"),
         padL("^^^   : Rumah Level 3"),
-        padL("*     : Hotel (Maksimal)"),
+        padL("****  : Rumah Level 4"),
+        padL("H     : Hotel (Maksimal)"),
         padL("(1)-(4): Bidak (IN=Tahanan, V=Mampir)"),
         padC(da_line),
         padL("KODE WARNA:")
@@ -234,19 +269,31 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
             for (int i = 0; i < (int)players.size(); i++)
                 if (players[i] == pt->getTileOwner()) { p_num = "P" + to_string(i+1); break; }
             int lvl = pt->getLevel();
-            string lvl_str = (lvl >= 4) ? "*" : string(lvl, '^');
+            string lvl_str;
+            if (lvl >= 5) lvl_str = "H";
+            else if (lvl == 4) lvl_str = "****";
+            else lvl_str = string(lvl, '^');
             line_2 = p_num + (lvl_str.empty() ? "" : " " + lvl_str);
         } else if (pt && pt->getTileOwner() != nullptr) {
             string p_num = "P?";
             for (int i = 0; i < (int)players.size(); i++)
                 if (players[i] == pt->getTileOwner()) { p_num = "P" + to_string(i+1); break; }
             int lvl = pt->getLevel();
-            string lvl_str = (lvl >= 4) ? "*" : string(lvl, '^');
+            string lvl_str;
+            if (lvl >= 5) lvl_str = "H";
+            else if (lvl == 4) lvl_str = "****";
+            else lvl_str = string(lvl, '^');
             line_2 = p_num + (lvl_str.empty() ? "" : " " + lvl_str);
         }
         string tokens = "";
-        for (int i = 0; i < (int)players.size(); i++)
-            if (players[i]->getCurrTile() == idx && players[i]->getStatus() != "BANKRUPT") tokens += "(" + to_string(i+1) + ")";
+        vector<string> player_colors = {red, yellow, green, cyan};
+        for (int i = 0; i < (int)players.size(); i++) {
+            if (players[i]->getCurrTile() == idx && players[i]->getStatus() != "BANKRUPT") {
+                string pc = (i < (int)player_colors.size()) ? player_colors[i] : white;
+                if (!tokens.empty()) tokens += " ";
+                tokens += pc + "(" + to_string(i+1) + ")" + reset;
+            }
+        }
         if (!tokens.empty()) line_2 += (line_2.empty() ? "" : " ") + tokens;
 
         return renderTile(line_1, line_2, color_group, t->getTileType(), w, h);
@@ -303,7 +350,7 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
 void OutputFormatter::printAkta(PropertyTile &t, Board &b, const GameConfig &cfg){
     initializeColors(b);
     string ttype = t.getTileType();
-    string color = (ttype == "UTILITY") ? "\033[1;90m" : getGroupColor(t.getColorGroup());
+    string color = getGroupColor(t.getColorGroup(), ttype);
     auto mval = [](int v) { return "M" + to_string(v); };
     auto row = [&](string label, string val) {
         cout << color << "|" << reset

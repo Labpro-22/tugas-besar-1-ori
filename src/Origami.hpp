@@ -95,6 +95,7 @@ private:
     int     getPlayerNum(Player &p) const;
     void    autoPayRent(Player &p, PropertyTile &prop);
     void    recoverForRent(Player &p, PropertyTile &prop);
+    void    recoverForDebt(Player &p, int amount, Player *creditor, const std::string &reason);
     void    interactiveLelang(Player *seller, PropertyTile &prop, std::vector<Player*> &participants);
     int     computeRent(PropertyTile &prop, int diceTotal) const;
     int     countRailroadsOwnedBy(Player *owner) const;
