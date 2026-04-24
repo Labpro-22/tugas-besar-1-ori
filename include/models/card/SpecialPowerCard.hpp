@@ -12,6 +12,7 @@ class MoveCard : public SpecialPowerCard {
         int getMoveValue() const;
         void action(Player& player) override;
         std::string describe() const override;
+        std::string getCardType() const override { return "MOVE"; }
 };
 
 class DiscountCard : public SpecialPowerCard {
@@ -22,6 +23,7 @@ class DiscountCard : public SpecialPowerCard {
         int getDiscountValue() const;
         void action(Player& player) override;
         std::string describe() const override;
+        std::string getCardType() const override { return "DISCOUNT"; }
 };
 
 class ShieldCard : public SpecialPowerCard {
@@ -29,6 +31,7 @@ class ShieldCard : public SpecialPowerCard {
         ShieldCard();
         void action(Player& player) override;
         std::string describe() const override;
+        std::string getCardType() const override { return "SHIELD"; }
 };
 
 class TeleportCard : public SpecialPowerCard {
@@ -36,6 +39,7 @@ class TeleportCard : public SpecialPowerCard {
         TeleportCard();
         void action(Player& player) override;
         std::string describe() const override;
+        std::string getCardType() const override { return "TELEPORT"; }
 };
 
 class LassoCard : public SpecialPowerCard {
@@ -43,6 +47,7 @@ class LassoCard : public SpecialPowerCard {
         LassoCard();
         void action(Player& player) override;
         std::string describe() const override;
+        std::string getCardType() const override { return "LASSO"; }
 };
 
 class DemolitionCard : public SpecialPowerCard {
@@ -50,6 +55,7 @@ class DemolitionCard : public SpecialPowerCard {
         DemolitionCard();
         void action(Player& player) override;
         std::string describe() const override;
+        std::string getCardType() const override { return "DEMOLITION"; }
 };
 
 #endif

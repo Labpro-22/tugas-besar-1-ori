@@ -1,90 +1,61 @@
 #include "include/models/board/Board.hpp"
-
-namespace
-{
-    int normalizeIndex(int index, int size)
-    {
-        int normalized_index = index % size;
-        if (normalized_index < 0)
-        {
-            normalized_index += size;
-        }
-        return normalized_index;
-    }
-} // namespace
+#include <algorithm>
 
 Board::Board(const std::vector<Tile *> &tiles) : tiles(tiles) {}
 
-Tile *Board::getTileByCode(std::string code) const
+Tile *Board::getTileByCode(std::string code) const 
 {
-    for (Tile *tile : tiles)
+    for (auto *t : tiles) 
     {
-        if (tile != nullptr && tile->getTileCode() == code)
+        if (t->getTileCode() == code) 
         {
-            return tile;
+            return t;
         }
     }
-
     return nullptr;
 }
 
-Tile *Board::getTileByIndex(int index) const
+Tile *Board::getTileByIndex(int index) const 
 {
-    if (tiles.empty())
+    if (index >= 0 && index < static_cast<int>(tiles.size())) 
     {
-        return nullptr;
+        return tiles[index];
     }
-
-    int normalized_index = normalizeIndex(index, static_cast<int>(tiles.size()));
-    return tiles[normalized_index];
+    return nullptr;
 }
 
-std::vector<PropertyTile *> Board::getPropertiesByColorGroup(std::string color) const
+std::vector<PropertyTile *> Board::getPropertiesByColorGroup(std::string color) const 
 {
-    std::vector<PropertyTile *> matching_properties;
-
-    for (Tile *tile : tiles)
+    std::vector<PropertyTile *> result;
+    for (auto *t : tiles) 
     {
-        PropertyTile *property_tile = dynamic_cast<PropertyTile *>(tile);
-        if (property_tile != nullptr && property_tile->getColorGroup() == color)
+        auto *p = dynamic_cast<PropertyTile*>(t);
+        if (p && p->getColorGroup() == color) 
         {
-            matching_properties.push_back(property_tile);
+            result.push_back(p);
         }
     }
-
-    return matching_properties;
+    return result;
 }
 
-int Board::getColorGroupSize(std::string color) const
+int Board::getColorGroupSize(std::string color) const 
 {
-    int color_group_size = 0;
-
-    for (Tile *tile : tiles)
-    {
-        const PropertyTile *property_tile = dynamic_cast<PropertyTile *>(tile);
-        if (property_tile != nullptr && property_tile->getColorGroup() == color)
-        {
-            color_group_size++;
-        }
-    }
-
-    return color_group_size;
+    return static_cast<int>(getPropertiesByColorGroup(color).size());
 }
 
-int Board::getTileIndex(std::string code) const
+int Board::getTileIndex(std::string code) const 
 {
-    for (std::size_t index = 0; index < tiles.size(); ++index)
+    for (int i = 0; i < static_cast<int>(tiles.size()); i++)
     {
-        if (tiles[index] != nullptr && tiles[index]->getTileCode() == code)
+        if (tiles[i]->getTileCode() == code) 
         {
-            return static_cast<int>(index);
+            return i;
         }
     }
-
     return -1;
 }
 
-int Board::getTileCount() const
-{
-    return static_cast<int>(tiles.size());
+int Board::getTileCount() const 
+{ 
+    return static_cast<int>(tiles.size()); 
 }

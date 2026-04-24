@@ -7,7 +7,7 @@ class ActionTile : public Tile
 {
 public:
     ActionTile(const std::string &code, const std::string &id, const std::string &name, const std::string &type);
-    void onLanded(Player &player) override;
+    void onLanded(Player &player, GameContext &ctx) override;
 };
 
 #endif

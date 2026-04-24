@@ -29,7 +29,6 @@ public:
     std::string getUsername();
     int getCurrTile();
     int getBalance();
-    int getJailCounter();
     std::vector<PropertyTile *> getOwnedProperties();
     std::string getStatus();
     bool isSkillUsed();
@@ -40,7 +39,6 @@ public:
     SpecialPowerCard *getHandCard(int index) const;
 
     void setCurrTile(int tile);
-    void addBalance(int amount);
     Player& operator+=(int amount);
     bool operator<(const Player& other) const;
     bool operator>(const Player& other) const;
