@@ -35,7 +35,6 @@ void NewGameScreen::loadAssets() {
     int sh = GetScreenHeight();
     globalScale = std::min(sw / 1280.0f, sh / 720.0f);
 
-    // back 2.png=302x64, start 2.png=413x96 — normalize both to same on-screen height
     const float TARGET_BTN_H = 55.0f;
     float btnY = sh * 0.84f;
 
@@ -82,7 +81,6 @@ void NewGameScreen::update(float dt) {
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
 
-    // Counter geometry — must match draw()
     float boxW = 90 * globalScale, boxH = 55 * globalScale;
     float counterX = (sw - boxW) / 2.0f;
     float counterY = sh * 0.29f;
@@ -176,13 +174,11 @@ void NewGameScreen::draw() {
     float labelScale = globalScale * 0.5f;
     DrawTextureEx(playerCountLabel, {(sw - playerCountLabel.width * labelScale) / 2.0f, sh * 0.13f}, 0.0f, labelScale, WHITE);
 
-    // Min/max: draw text directly (no asset for MAX 4)
     int mmFontSize = static_cast<int>(22 * globalScale);
     const char* mmText = "(MIN: 2, MAX: 4)";
     int mmW = MeasureText(mmText, mmFontSize);
     DrawText(mmText, (sw - mmW) / 2, static_cast<int>(sh * 0.21f), mmFontSize, YELLOW);
 
-    // Counter: draw a custom box + number instead of using the spinner asset
     float boxW = 90 * globalScale;
     float boxH = 55 * globalScale;
     float counterX = (sw - boxW) / 2.0f;
@@ -198,7 +194,6 @@ void NewGameScreen::draw() {
              static_cast<int>(counterY + (boxH - fontSize) / 2),
              fontSize, WHITE);
 
-    // Minus button (left of box)
     float btnBoxW = 44 * globalScale, btnBoxH = 38 * globalScale;
     float minusX = counterX - btnBoxW - 14 * globalScale;
     float plusX  = counterX + boxW + 14 * globalScale;

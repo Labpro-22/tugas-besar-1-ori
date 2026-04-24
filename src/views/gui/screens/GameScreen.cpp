@@ -4,17 +4,11 @@
 #include <fstream>
 #include <sstream>
 
-// ── Tile alignment tuning ────────────────────────────────────────────────────
-// Corner tiles width/height as fraction of board w/h  (user confirmed 2/14 ✓)
 static const float CORNER_RATIO_W = 2.0f / 14.0f;
 static const float CORNER_RATIO_H = 2.0f / 14.0f;
 
-// Board frame/border: fraction of board dimension removed on EACH side before
-// computing tile sizes.  Increase if side tiles still appear too long.
-// e.g. 0.005 = 0.5% per side  →  tiles shrink ~1% total
-static const float BOARD_INSET_W  = 0.002f; // ← tune horizontal tile length
-static const float BOARD_INSET_H  = 0.002f; // ← tune vertical   tile length
-// ─────────────────────────────────────────────────────────────────────────────
+static const float BOARD_INSET_W  = 0.002f; 
+static const float BOARD_INSET_H  = 0.002f; 
 
 static void getGridRC(int i, int& row, int& col) {
     if (i == 0)        { row = 10; col = 10; }
@@ -55,13 +49,12 @@ void GameScreen::computeLayout() {
     float bw = boardTexture.width * boardScale;
     float bh = boardTexture.height * boardScale;
 
-    // effective tile area (excludes board frame)
     float inX  = bw * BOARD_INSET_W;
     float inY  = bh * BOARD_INSET_H;
-    float tX0  = boardX + inX;          // left edge of tile area
-    float tY0  = boardY + inY;          // top  edge of tile area
-    float tW   = bw - 2.0f * inX;      // effective width
-    float tH   = bh - 2.0f * inY;      // effective height
+    float tX0  = boardX + inX;          
+    float tY0  = boardY + inY;          
+    float tW   = bw - 2.0f * inX;      
+    float tH   = bh - 2.0f * inY;      
 
     float cornerSz  = tW * cornerRatioW;
     float sideSz    = (tW - 2.0f * cornerSz)  / 9.0f;
@@ -339,8 +332,6 @@ void GameScreen::draw() {
 
     DrawTextureEx(boardTexture, {boardX, boardY}, 0.0f, boardScale, WHITE);
 
-    // hitboxes invisible — used only for click detection
-
     float iconScale = globalScale * 0.06f;
     int boardNameSize = static_cast<int>(8 * globalScale);
     for (int i = 0; i < numPlayers; i++) {
@@ -539,7 +530,6 @@ float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
     DrawRectangleLinesEx({btnRollDice.getX(), btnRollDice.getY(), btnRollDice.getWidth(), btnRollDice.getHeight()}, 2, BLACK);
     btnEndTurn.draw();
 
-    // ── Akta overlay ─────────────────────────────────────────────────────────
     if (selectedTileIdx >= 0) {
         float bw = boardTexture.width * boardScale;
         float bh = boardTexture.height * boardScale;
@@ -555,7 +545,6 @@ float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
 
         const TileInfo& info = tileData[selectedTileIdx];
 
-        // ── Header: name + type ───────────────────────────────────────────────
         int nameSz = static_cast<int>(aktaH * 0.055f);
         int nameW  = MeasureText(info.name.c_str(), nameSz);
         DrawText(info.name.c_str(),
@@ -570,16 +559,15 @@ float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
                  (int)(aktaY + aktaH * 0.13f),
                  typeSz, {148, 73, 68, 255});
 
-        // ── Body: rows ────────────────────────────────────────────────────────
-        float lx  = aktaX + aktaW * 0.08f;           // left  text margin
-        float rx  = aktaX + aktaW * 0.92f;            // right text anchor
-        float ry  = aktaY + aktaH * 0.23f;            // current row Y
-        float rH  = aktaH * 0.052f;                   // row height
-        int   rSz = static_cast<int>(aktaH * 0.038f); // row font size
-        int   lSz = static_cast<int>(aktaH * 0.033f); // label font size
-        Color lC  = {80,  50, 40, 255};               // label colour
-        Color vC  = {30,  20, 15, 255};               // value colour
-        Color sC  = {148, 73, 68, 255};               // section title colour
+        float lx  = aktaX + aktaW * 0.08f;           
+        float rx  = aktaX + aktaW * 0.92f;            
+        float ry  = aktaY + aktaH * 0.23f;            
+        float rH  = aktaH * 0.052f;                   
+        int   rSz = static_cast<int>(aktaH * 0.038f); 
+        int   lSz = static_cast<int>(aktaH * 0.033f); 
+        Color lC  = {80,  50, 40, 255};               
+        Color vC  = {30,  20, 15, 255};               
+        Color sC  = {148, 73, 68, 255};               
 
         char buf[64];
 
@@ -644,11 +632,10 @@ float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
             drawRow("2 Utilitas", "Dadu x 10");
 
         } else {
-            // Non-purchasable tiles (GO, Jail, Tax, etc.)
+            
             drawRow("Tipe", info.type.c_str());
         }
 
-        // ── Hint ─────────────────────────────────────────────────────────────
         int hintSz = static_cast<int>(aktaH * 0.028f);
         const char* hint = "Click anywhere to close";
         int hintW = MeasureText(hint, hintSz);

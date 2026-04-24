@@ -59,8 +59,8 @@ private:
 
     float globalScale;
     float boardX, boardY, boardScale;
-    float cornerRatioW; // horizontal: cornerSz  / bw  (tune me)
-    float cornerRatioH; // vertical:   cornerSzh / bh  (tune me)
+    float cornerRatioW; 
+    float cornerRatioH; 
     float tileCenters[40][2];
     Rectangle tileBounds[40];
 

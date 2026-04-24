@@ -31,7 +31,7 @@ void GuiApp::switchScreen(AppScreen screen) {
             currentScreen = std::make_unique<NewGameScreen>(gameConfig);
             break;
         case AppScreen::LOAD_GAME:
-            currentScreen = std::make_unique<HomeScreen>(); // Placeholder
+            currentScreen = std::make_unique<HomeScreen>(); 
             break;
         case AppScreen::GAME:
             currentScreen = std::make_unique<GameScreen>(gameConfig);
