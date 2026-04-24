@@ -1,39 +1,86 @@
 #include "include/core/RentManager.hpp"
 
-#include "include/models/player/Player.hpp"
-#include "include/models/tiles/PropertyTile.hpp"
-#include "utils/exceptions/BankruptException.hpp"
-#include "utils/exceptions/UnablePayRentException.hpp"
-
 bool RentManager::payRent(Player &buyer, Player &owner, Tile &tile)
 {
-    PropertyTile *property = dynamic_cast<PropertyTile *>(&tile);
-    if (property == nullptr)
-    {
-        throw UnablePayRentException("Target tile is not rent-bearing property.");
+    auto *prop = dynamic_cast<PropertyTile*>(&tile);
+    if (!prop) {
+        return false;
     }
 
-    if (property->getTileOwner() != &owner)
-    {
-        throw UnablePayRentException("Specified owner does not own this property.");
-    }
-
-    if (&buyer == &owner)
-    {
-        throw UnablePayRentException("Player cannot pay rent to self.");
-    }
-
-    int rent = property->calculateRent();
-    if (buyer.getBalance() < rent)
-    {
-        int payment = buyer.getBalance();
-        buyer.setStatus("BANKRUPT");
-        buyer += -payment;
-        owner += payment;
-        throw BankruptCausePlayerException();
+    int rent = prop->calculateRent();
+    if (buyer.getBalance() < rent) {
+        return false;
     }
 
     buyer += -rent;
     owner += rent;
     return true;
+}
+
+int RentManager::computeRent(
+    PropertyTile &prop, 
+    int diceTotal, 
+    const GameConfig &cfg, 
+    const std::vector<Tile*> &allTiles
+) {
+    std::string type = prop.getTileType();
+    Player *owner = prop.getTileOwner();
+    
+    if (!owner || prop.isMortgage()) {
+        return 0;
+    }
+
+    int baseRent = 0;
+
+    if (type == "STREET") {
+        int lvl = prop.getLevel();
+        auto rents = prop.getRentPrice();
+        
+        if (lvl >= 0 && lvl < static_cast<int>(rents.size())) {
+            baseRent = rents[lvl];
+        }
+
+        if (prop.isMonopolized() && lvl == 0) {
+            baseRent *= 2;
+        }
+    } else if (type == "RAILROAD") {
+        int cnt = countRailroadsOwnedBy(owner, allTiles);
+        baseRent = cfg.getRailroadRentForCount(cnt);
+    } else if (type == "UTILITY") {
+        int cnt = countUtilitiesOwnedBy(owner, allTiles);
+        int mult = cfg.getUtilityMultiplierForCount(cnt);
+        baseRent = diceTotal * mult;
+    }
+
+    if (prop.getFestivalDuration() > 0) {
+        baseRent *= prop.getFestivalMultiplier();
+    }
+
+    return baseRent;
+}
+
+int RentManager::countRailroadsOwnedBy(Player *owner, const std::vector<Tile*> &allTiles) {
+    int cnt = 0;
+    
+    for (auto *t : allTiles) {
+        auto *p = dynamic_cast<PropertyTile*>(t);
+        if (p && p->getTileType() == "RAILROAD" && p->getTileOwner() == owner) {
+            cnt++;
+        }
+    }
+    
+    return cnt;
+}
+
+int RentManager::countUtilitiesOwnedBy(Player *owner, const std::vector<Tile*> &allTiles) {
+    int cnt = 0;
+    
+    for (auto *t : allTiles) {
+        auto *p = dynamic_cast<PropertyTile*>(t);
+        if (p && p->getTileType() == "UTILITY" && p->getTileOwner() == owner) {
+            cnt++;
+        }
+    }
+    
+    return cnt;
 }
