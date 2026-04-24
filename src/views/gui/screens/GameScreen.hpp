@@ -22,6 +22,11 @@ private:
     Button btnRollDice;
     Button btnEndTurn;
 
+    Button btnBuyProperty;
+    Button btnAuction;
+    Button btnBuildHouse;
+    Button btnMortgage;
+
     int activeTab;
     int currentPlayerIdx;
     int numPlayers;

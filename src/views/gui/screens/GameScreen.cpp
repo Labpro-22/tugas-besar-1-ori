@@ -1,5 +1,6 @@
 #include "GameScreen.hpp"
 #include <algorithm>
+#include <cstdio>
 
 static const float CORNER_RATIO = 0.135f;
 
@@ -111,6 +112,29 @@ float diceSz = cardPanel.width * cardScale * 0.12f;
 
     btnRollDice.loadAsText("ROLL", rollBtnX, actionBtnY, rollBtnW, actionBtnH, {244, 206, 43, 255}, {250, 220, 70, 255}, {80, 40, 35, 255});
     btnEndTurn.loadAsText("END", endBtnX, actionBtnY, endBtnW, actionBtnH, {255, 235, 202, 255}, {255, 240, 215, 255}, {80, 40, 35, 255});
+
+    float boxPad   = 12.0f * globalScale;
+    float abBoxX   = cardX + boxPad + 20.0f;
+    float abBoxY   = btnY + btnH + boxPad + 10.0f;
+    float abBoxW   = cardPanel.width * cardScale - 6.0f * boxPad;
+    float abBoxH   = 100.0f * globalScale;
+
+    float labelH   = 14.0f * globalScale;
+    float abtnStartY = abBoxY + abBoxH + 10.0f * globalScale + labelH + 8.0f * globalScale;
+    float abtnColGap = 8.0f * globalScale;
+    float abtnRowGap = 6.0f * globalScale;
+    float abtnW    = (abBoxW - abtnColGap) / 2.0f;
+    float abtnH    = 30.0f * globalScale;
+
+    Color abBg    = {255, 235, 202, 255};
+    Color abHover = {255, 220, 180, 255};
+    Color abFg    = {80, 40, 35, 255};
+
+    float col2X = abBoxX + abtnW + abtnColGap;
+    btnBuyProperty.loadAsText("BUY PROPERTY", abBoxX, abtnStartY,                        abtnW, abtnH, abBg, abHover, abFg);
+    btnAuction.loadAsText(   "AUCTION",      col2X,  abtnStartY,                        abtnW, abtnH, abBg, abHover, abFg);
+    btnBuildHouse.loadAsText("BUILD HOUSE",  abBoxX, abtnStartY + (abtnH + abtnRowGap), abtnW, abtnH, abBg, abHover, abFg);
+    btnMortgage.loadAsText(  "MORTGAGE",     col2X,  abtnStartY + (abtnH + abtnRowGap), abtnW, abtnH, abBg, abHover, abFg);
 }
 
 void GameScreen::loadAssets() {
@@ -153,6 +177,10 @@ void GameScreen::unloadAssets() {
     btnLog.unload();
     btnRollDice.unload();
     btnEndTurn.unload();
+    btnBuyProperty.unload();
+    btnAuction.unload();
+    btnBuildHouse.unload();
+    btnMortgage.unload();
 }
 
 void GameScreen::update(float dt) {
@@ -245,6 +273,60 @@ void GameScreen::draw() {
     btnAssets.draw();
     btnPlayers.draw();
     btnLog.draw();
+
+    if (activeTab == 0) {
+        float boxPad = 12.0f * globalScale;
+        float boxX = cardX + boxPad + 20.0f;
+        float boxY = btnPlay.getY() + btnPlay.getHeight() + boxPad + 10.0f;
+        float boxW = cardPanel.width * cardScale - 6.0f * boxPad;
+        float boxH = 100.0f * globalScale;
+
+        DrawRectangleRec({boxX, boxY, boxW, boxH}, {255, 243, 210, 255});
+        DrawRectangleLinesEx({boxX, boxY, boxW, boxH}, 2.5f, {50, 25, 20, 255});
+
+        int titleSz = static_cast<int>(15 * globalScale);
+        int subSz   = static_cast<int>(12 * globalScale);
+
+        if (diceRolling) {
+            DrawText("ROLLING...",
+                     static_cast<int>(boxX + 8 * globalScale),
+                     static_cast<int>(boxY + 8 * globalScale),
+                     titleSz, BLACK);
+        } else if (hasRolled) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%d + %d = %d", dice1, dice2, dice1 + dice2);
+            DrawText("DICE RESULT",
+                     static_cast<int>(boxX + 8 * globalScale),
+                     static_cast<int>(boxY + 8 * globalScale),
+                     titleSz, BLACK);
+            DrawText(buf,
+                     static_cast<int>(boxX + 8 * globalScale),
+                     static_cast<int>(boxY + 8 * globalScale + titleSz + 4 * globalScale),
+                     subSz, {80, 40, 35, 255});
+        } else {
+            DrawText("Roll the dice to play!",
+                     static_cast<int>(boxX + 8 * globalScale),
+                     static_cast<int>(boxY + 16 * globalScale),
+                     subSz, {120, 80, 75, 255});
+        }
+
+        float actionsLabelY = boxY + boxH + 10.0f * globalScale;
+        int labelSz = static_cast<int>(13 * globalScale);
+        DrawText("ACTIONS",
+                 static_cast<int>(boxX),
+                 static_cast<int>(actionsLabelY),
+                 labelSz, {148, 73, 68, 255});
+
+        Color border = {80, 40, 35, 255};
+        auto drawActionBtn = [&](Button& btn) {
+            btn.draw();
+            DrawRectangleLinesEx({btn.getX(), btn.getY(), btn.getWidth(), btn.getHeight()}, 1.5f, border);
+        };
+        drawActionBtn(btnBuyProperty);
+        drawActionBtn(btnAuction);
+        drawActionBtn(btnBuildHouse);
+        drawActionBtn(btnMortgage);
+    }
 
     float iconSz = cardPanel.width * cardScale * 0.15f;
     float iconStartX = cardX + (cardPanel.width * cardScale - iconSz) - 306.0f;
