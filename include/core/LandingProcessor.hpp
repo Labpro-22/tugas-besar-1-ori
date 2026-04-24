@@ -8,13 +8,19 @@
 class GameState;
 class Player;
 class PropertyTile;
+class RentCollector;
+class BankruptcyProcessor;
 
 class LandingProcessor : public GameContext {
 private:
     GameState &state;
+    RentCollector *rentCollector;
+    BankruptcyProcessor *bankruptcyProc;
 
 public:
     explicit LandingProcessor(GameState &s);
+    void setRentCollector(RentCollector *rc);
+    void setBankruptcyProcessor(BankruptcyProcessor *bp);
 
     bool rollAndMove(Player &p, bool manual, int d1 = 0, int d2 = 0);
     void applyLanding(Player &p);

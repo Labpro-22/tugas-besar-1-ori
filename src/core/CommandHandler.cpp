@@ -379,8 +379,9 @@ void CommandHandler::executeTurn(Player &p) {
                 cout << "Tidak punya properti.\n";
             } else { 
                 string code; cin >> code; 
-                cardProc.cmdFestival(p, code); 
-                has_festival_used = true; 
+                if (cardProc.cmdFestival(p, code)) {
+                    has_festival_used = true; 
+                }
             }
         } else if (cmd == "BANTUAN" || cmd == "HELP") {
             cout << "\n=== Daftar Perintah ===\n";

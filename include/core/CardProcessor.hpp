@@ -22,7 +22,7 @@ public:
     void drawSkillCardAtTurnStart(Player &p);
 
     void cmdGunakanKemampuan(Player &p, int index);
-    void cmdFestival(Player &p, const std::string &code);
+    bool cmdFestival(Player &p, const std::string &code);
 };
 
 #endif

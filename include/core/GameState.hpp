@@ -16,6 +16,8 @@
 #include "include/models/player/Player.hpp"
 #include "include/views/OutputFormatter.hpp"
 
+class RentCollector;
+
 class GameState {
 public:
     std::vector<Tile*> tiles;
@@ -32,6 +34,7 @@ public:
     GameConfig config;
     EventManager events;
     OutputFormatter formatter;
+    RentCollector *rentCollector;
 
     CardDeck<ChanceCard> chance_deck;
     CardDeck<CommunityChestCard> community_deck;

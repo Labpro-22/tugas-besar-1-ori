@@ -1,4 +1,5 @@
 #include "include/core/CardManager.hpp"
+#include <iostream>
 
 void CardManager::resolveCardEffect(
     Card &card, 
@@ -22,7 +23,13 @@ void CardManager::applyHappyBirthday(
 ) {
     for (auto *p : all_players) {
         if (p && p != &receiver && p->getStatus() != "BANKRUPT") {
-            transfer(*p, receiver, amount_per_player);
+            if (p->getBalance() >= amount_per_player) {
+                transfer(*p, receiver, amount_per_player);
+                std::cout << p->getUsername() << " membayar M" << amount_per_player << " ke " << receiver.getUsername() << ".\n";
+            } else {
+                transfer(*p, receiver, p->getBalance());
+                std::cout << p->getUsername() << " tidak mampu membayar penuh. Membayar sisa M" << p->getBalance() << ".\n";
+            }
         }
     }
 }

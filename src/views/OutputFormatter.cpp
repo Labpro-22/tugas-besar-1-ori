@@ -263,8 +263,8 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
         string color_code  = getColorCode(color_group, t->getTileType());
         string line_1 = "[" + color_code + "] " + t->getTileCode();
 
-        string line_2 = "";
-        if (pt && pt->getTileOwner() != nullptr && pt->getTileOwner()->getStatus() != "BANKRUPT") {
+        string owner_str = "";
+        if (pt && pt->getTileOwner() != nullptr) {
             string p_num = "P?";
             for (int i = 0; i < (int)players.size(); i++)
                 if (players[i] == pt->getTileOwner()) { p_num = "P" + to_string(i+1); break; }
@@ -272,29 +272,32 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
             string lvl_str;
             if (lvl >= 5) lvl_str = "H";
             else if (lvl == 4) lvl_str = "****";
-            else lvl_str = string(lvl, '^');
-            line_2 = p_num + (lvl_str.empty() ? "" : " " + lvl_str);
-        } else if (pt && pt->getTileOwner() != nullptr) {
-            string p_num = "P?";
-            for (int i = 0; i < (int)players.size(); i++)
-                if (players[i] == pt->getTileOwner()) { p_num = "P" + to_string(i+1); break; }
-            int lvl = pt->getLevel();
-            string lvl_str;
-            if (lvl >= 5) lvl_str = "H";
-            else if (lvl == 4) lvl_str = "****";
-            else lvl_str = string(lvl, '^');
-            line_2 = p_num + (lvl_str.empty() ? "" : " " + lvl_str);
+            else if (lvl > 0) lvl_str = string(lvl, '^');
+            if (pt->isMortgage()) owner_str = p_num + "[M]";
+            else owner_str = p_num + (lvl_str.empty() ? "" : " " + lvl_str);
         }
+
         string tokens = "";
         vector<string> player_colors = {red, yellow, green, cyan};
+        map<int, string> jailInfo;
         for (int i = 0; i < (int)players.size(); i++) {
             if (players[i]->getCurrTile() == idx && players[i]->getStatus() != "BANKRUPT") {
                 string pc = (i < (int)player_colors.size()) ? player_colors[i] : white;
-                if (!tokens.empty()) tokens += " ";
-                tokens += pc + "(" + to_string(i+1) + ")" + reset;
+                string suffix;
+                if (players[i]->getStatus() == "JAIL")
+                    suffix = "IN";
+                tokens += pc + to_string(i+1) + reset + " ";
             }
         }
-        if (!tokens.empty()) line_2 += (line_2.empty() ? "" : " ") + tokens;
+        while (!tokens.empty() && tokens.back() == ' ') tokens.pop_back();
+
+        string line_2;
+        if (!tokens.empty() && !owner_str.empty())
+            line_2 = tokens + "|" + owner_str;
+        else if (!tokens.empty())
+            line_2 = tokens;
+        else
+            line_2 = owner_str;
 
         return renderTile(line_1, line_2, color_group, t->getTileType(), w, h);
     };
@@ -403,10 +406,16 @@ void OutputFormatter::printAkta(PropertyTile &t, Board &b, const GameConfig &cfg
 
     cout << color << "+================================+" << reset << "\n";
     string owner_str  = t.getTileOwner() ? t.getTileOwner()->getUsername() : "BANK";
-    string status_str = t.isMortgage() ? "DIGADAI" : "AKTIF";
+    string status_str = t.isMortgage() ? "DIGADAI [M]" : "AKTIF";
     cout << color << "|" << reset
          << leftOut(" Status: " + status_str + " (" + owner_str + ")", 32)
          << color << "|" << reset << "\n";
+    if (t.getFestivalDuration() > 0) {
+        string fest_str = "Festival: x" + to_string(t.getFestivalMultiplier()) + " (sisa " + to_string(t.getFestivalDuration()) + " giliran)";
+        cout << color << "|" << reset
+             << leftOut(" " + fest_str, 32)
+             << color << "|" << reset << "\n";
+    }
     cout << color << "+================================+" << reset << "\n";
 }
 

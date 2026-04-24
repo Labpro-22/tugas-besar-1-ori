@@ -2,6 +2,7 @@
 #include "include/core/GameState.hpp"
 #include "include/core/PropertyManager.hpp"
 #include "include/core/RentManager.hpp"
+#include "include/core/RentCollector.hpp"
 #include "include/core/TaxManager.hpp"
 #include "include/core/JailManager.hpp"
 #include "include/core/BankruptcyProcessor.hpp"
@@ -51,7 +52,15 @@ namespace {
     }
 }
 
-LandingProcessor::LandingProcessor(GameState &s) : state(s) {}
+LandingProcessor::LandingProcessor(GameState &s) : state(s), rentCollector(nullptr), bankruptcyProc(nullptr) {}
+
+void LandingProcessor::setRentCollector(RentCollector *rc) {
+    rentCollector = rc;
+}
+
+void LandingProcessor::setBankruptcyProcessor(BankruptcyProcessor *bp) {
+    bankruptcyProc = bp;
+}
 
 bool LandingProcessor::rollAndMove(Player &p, bool manual, int d1, int d2) {
     int boardSize = state.board.getTileCount();
@@ -151,11 +160,12 @@ void LandingProcessor::handlePropertyLanding(Player &p, PropertyTile &prop) {
         cout << "Ini properti Anda sendiri.\n";
     } else {
         if (p.isShieldActive()) {
-            cout << "Perisai aktif! Tidak perlu membayar sewa.\n";
+            cout << "[SHIELD ACTIVE]: Efek ShieldCard melindungi Anda!\n";
+            cout << "Tagihan sewa dibatalkan. Uang Anda tetap: M" << p.getBalance() << ".\n";
         } else {
-            int rent = computeRent(prop, state.dice.getTotal());
-            cout << "Anda harus membayar sewa M" << rent
-                 << " ke " << owner->getUsername() << ".\n";
+            if (rentCollector) {
+                rentCollector->autoPayRent(p, prop);
+            }
         }
     }
 }
@@ -222,16 +232,27 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
         state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
     } else {
         int maxLiq = PropertyManager::calculateMaxLiquidation(p);
-        if (maxLiq < amt) {
-            cout << "Tidak cukup aset. Bangkrut ke Bank!\n";
+        if (p.getBalance() + maxLiq < amt) {
+            if (isBot || !bankruptcyProc) {
+                cout << "Tidak cukup aset untuk membayar pajak M" << amt << ". Bangkrut ke Bank!\n";
+                if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
+            } else {
+                bankruptcyProc->processBankruptcy(p);
+            }
         } else if (isBot) {
-            if (PropertyManager::autoLiquidate(p, state.board, amt)) {
+            PropertyManager::autoLiquidate(p, state.board, amt);
+            p += -amt;
+            cout << p.getUsername() << " membayar pajak M" << amt << ".\n";
+            state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
+        } else {
+            if (rentCollector) {
+                rentCollector->recoverForDebt(p, amt, nullptr, "pajak");
+            }
+            if (p.getStatus() != "BANKRUPT" && p.getBalance() >= amt) {
                 p += -amt;
                 cout << p.getUsername() << " membayar pajak M" << amt << ".\n";
                 state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
             }
-        } else {
-            cout << "Saldo tidak cukup untuk pajak M" << amt << ". Likuidasi diperlukan.\n";
         }
     }
 }
@@ -282,9 +303,19 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
         cout << "+" << bar << "+\n";
 
         if (p.isShieldActive()) {
-            cout << "[SHIELD ACTIVE]: Tagihan dibatalkan. Uang tetap: M" << p.getBalance() << ".\n";
+            cout << "[SHIELD ACTIVE]: Efek ShieldCard melindungi Anda!\n";
+            cout << "Tagihan dari kartu Dana Umum dibatalkan. Uang Anda tetap: M" << p.getBalance() << ".\n";
         } else {
             CardManager::resolveCardEffect(*card, p, state.players);
+            if (p.getBalance() < 0) {
+                int maxLiq = PropertyManager::calculateMaxLiquidation(p);
+                if (maxLiq + p.getBalance() < 0) {
+                    cout << p.getUsername() << " tidak mampu membayar tagihan kartu Dana Umum! Bangkrut!\n";
+                    if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
+                } else {
+                    cout << "Saldo habis setelah efek kartu. Likuidasi mungkin diperlukan.\n";
+                }
+            }
         }
         state.community_deck.discardCard(card);
         state.addLog(p, "KARTU", "Dana Umum: " + card->describe());

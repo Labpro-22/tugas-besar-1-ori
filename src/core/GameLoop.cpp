@@ -433,6 +433,9 @@ void GameLoop::start() {
     LandingProcessor landing(*state);
     BankruptcyProcessor bankruptcy(*state, landing);
     RentCollector rentCollector(*state, bankruptcy);
+    state->rentCollector = &rentCollector;
+    landing.setRentCollector(&rentCollector);
+    landing.setBankruptcyProcessor(&bankruptcy);
     CardProcessor cardProc(*state, bankruptcy);
     CommandHandler cmdHandler(*state, landing, bankruptcy, cardProc, rentCollector, *this);
     BotController botCtrl(*state, landing, bankruptcy, cardProc, rentCollector);
@@ -491,7 +494,6 @@ void GameLoop::run() {
         
         GameLoop loop;
         loop.state = gs;
-        loop.distributeSkillCards();
         loop.start();
         
         delete gs;

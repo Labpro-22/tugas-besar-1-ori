@@ -275,20 +275,20 @@ void CardProcessor::cmdGunakanKemampuan(Player &p, int index) {
     }
 }
 
-void CardProcessor::cmdFestival(Player &p, const string &code) {
+bool CardProcessor::cmdFestival(Player &p, const string &code) {
     if (state.tiles[p.getCurrTile()]->getTileType() != "FESTIVAL") {
         cout << "Hanya bisa di petak Festival.\n"; 
-        return;
+        return false;
     }
     Tile *t = state.board.getTileByCode(code);
     if (!t) { 
         cout << "Kode '" << code << "' tidak ditemukan.\n"; 
-        return; 
+        return false; 
     }
     auto *prop = dynamic_cast<PropertyTile*>(t);
     if (!prop || prop->getTileOwner() != &p) { 
         cout << "Bukan properti Anda.\n"; 
-        return; 
+        return false;
     }
 
     int curMult = prop->getFestivalMultiplier();
@@ -313,4 +313,5 @@ void CardProcessor::cmdFestival(Player &p, const string &code) {
              << " (x" << newMult << " selama 3 giliran).\n";
     }
     state.addLog(p, "FESTIVAL", code + ": x" + to_string(newMult) + " 3 giliran");
+    return true;
 }

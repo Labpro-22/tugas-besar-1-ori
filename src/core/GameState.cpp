@@ -20,7 +20,8 @@ GameState::GameState(
     turn_order(std::move(order)), 
     turn_order_idx(0), 
     transaction_log(),
-    config(cfg), 
+    config(cfg),
+    rentCollector(nullptr),
     game_over(false), 
     game_over_by_bankruptcy(false), 
     jail_turns() {
