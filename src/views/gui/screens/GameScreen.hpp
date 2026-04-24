@@ -48,8 +48,10 @@ private:
 
     float globalScale;
     float boardX, boardY, boardScale;
-    float cornerRatio;
+    float cornerRatioW; // horizontal: cornerSz  / bw  (tune me)
+    float cornerRatioH; // vertical:   cornerSzh / bh  (tune me)
     float tileCenters[40][2];
+    Rectangle tileBounds[40];
 
     GameConfig* gameConfig;
 

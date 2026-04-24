@@ -2,7 +2,17 @@
 #include <algorithm>
 #include <cstdio>
 
-static const float CORNER_RATIO = 0.135f;
+// ── Tile alignment tuning ────────────────────────────────────────────────────
+// Corner tiles width/height as fraction of board w/h  (user confirmed 2/14 ✓)
+static const float CORNER_RATIO_W = 2.0f / 14.0f;
+static const float CORNER_RATIO_H = 2.0f / 14.0f;
+
+// Board frame/border: fraction of board dimension removed on EACH side before
+// computing tile sizes.  Increase if side tiles still appear too long.
+// e.g. 0.005 = 0.5% per side  →  tiles shrink ~1% total
+static const float BOARD_INSET_W  = 0.002f; // ← tune horizontal tile length
+static const float BOARD_INSET_H  = 0.002f; // ← tune vertical   tile length
+// ─────────────────────────────────────────────────────────────────────────────
 
 static void getGridRC(int i, int& row, int& col) {
     if (i == 0)        { row = 10; col = 10; }
@@ -21,7 +31,7 @@ GameScreen::GameScreen(GameConfig& config)
       dice1(1), dice2(1), diceRolling(false), diceRollTimer(0), diceRollInterval(0.08f), diceRollFrame(0),
       hasRolled(false), turnEnded(false),
       globalScale(1.0f), boardX(0), boardY(0), boardScale(1.0f),
-      cornerRatio(CORNER_RATIO),
+      cornerRatioW(CORNER_RATIO_W), cornerRatioH(CORNER_RATIO_H),
       gameConfig(&config) {
     for (int i = 0; i < 6; i++) playerIcons[i] = {};
     for (int i = 0; i < 6; i++) diceTextures[i] = {};
@@ -41,26 +51,41 @@ void GameScreen::computeLayout() {
 
     float bw = boardTexture.width * boardScale;
     float bh = boardTexture.height * boardScale;
-    float cornerSz = bw * cornerRatio;
-    float sideSz = (bw - 2.0f * cornerSz) / 9.0f;
-    float cornerSzh = bh * cornerRatio;
-    float sideSzh = (bh - 2.0f * cornerSzh) / 9.0f;
+
+    // effective tile area (excludes board frame)
+    float inX  = bw * BOARD_INSET_W;
+    float inY  = bh * BOARD_INSET_H;
+    float tX0  = boardX + inX;          // left edge of tile area
+    float tY0  = boardY + inY;          // top  edge of tile area
+    float tW   = bw - 2.0f * inX;      // effective width
+    float tH   = bh - 2.0f * inY;      // effective height
+
+    float cornerSz  = tW * cornerRatioW;
+    float sideSz    = (tW - 2.0f * cornerSz)  / 9.0f;
+    float cornerSzh = tH * cornerRatioH;
+    float sideSzh   = (tH - 2.0f * cornerSzh) / 9.0f;
 
     for (int i = 0; i < 40; i++) {
         int row, col;
         getGridRC(i, row, col);
 
         float cx, cy;
-        if (col == 0)      cx = boardX + cornerSz / 2.0f;
-        else if (col == 10) cx = boardX + bw - cornerSz / 2.0f;
-        else                cx = boardX + cornerSz + (col - 1) * sideSz + sideSz / 2.0f;
+        if (col == 0)       cx = tX0 + cornerSz / 2.0f;
+        else if (col == 10) cx = tX0 + tW - cornerSz / 2.0f;
+        else                cx = tX0 + cornerSz + (col - 1) * sideSz + sideSz / 2.0f;
 
-        if (row == 0)        cy = boardY + cornerSzh / 2.0f;
-        else if (row == 10)  cy = boardY + bh - cornerSzh / 2.0f;
-        else                 cy = boardY + cornerSzh + (row - 1) * sideSzh + sideSzh / 2.0f;
+        if (row == 0)        cy = tY0 + cornerSzh / 2.0f;
+        else if (row == 10)  cy = tY0 + tH - cornerSzh / 2.0f;
+        else                 cy = tY0 + cornerSzh + (row - 1) * sideSzh + sideSzh / 2.0f;
 
         tileCenters[i][0] = cx;
         tileCenters[i][1] = cy;
+
+        bool isCorner   = (row == 0 || row == 10) && (col == 0 || col == 10);
+        bool isTopBot   = (row == 0 || row == 10) && !isCorner;
+        float tw = isCorner ? cornerSz  : (isTopBot ? sideSz : cornerSz);
+        float th = isCorner ? cornerSzh : (isTopBot ? cornerSzh : sideSzh);
+        tileBounds[i] = { cx - tw / 2.0f, cy - th / 2.0f, tw, th };
     }
 
     float boardRight = boardX + boardTexture.width * boardScale;
@@ -253,6 +278,37 @@ void GameScreen::draw() {
     DrawTextureEx(blurredBgTexture, {bgX, bgY}, 0.0f, bgScale, WHITE);
 
     DrawTextureEx(boardTexture, {boardX, boardY}, 0.0f, boardScale, WHITE);
+
+    for (int i = 0; i < 40; i++) {
+        int row, col;
+        getGridRC(i, row, col);
+
+        // colour per side: bottom=blue, left=green, top=orange, right=red, corner=purple
+        Color fillCol, lineCol;
+        if ((row == 0 || row == 10) && (col == 0 || col == 10)) {
+            fillCol = {180, 0, 255, 50};  lineCol = {160, 0, 255, 220};
+        } else if (row == 10) {
+            fillCol = {0, 100, 255, 50};  lineCol = {0,  80, 255, 220};
+        } else if (row == 0) {
+            fillCol = {255, 140, 0,  50};  lineCol = {230, 120, 0,  220};
+        } else if (col == 0) {
+            fillCol = {0,  200, 80,  50};  lineCol = {0,  170, 60,  220};
+        } else {
+            fillCol = {255, 30,  30,  50};  lineCol = {220, 20,  20,  220};
+        }
+
+        DrawRectangleRec(tileBounds[i], fillCol);
+        DrawRectangleLinesEx(tileBounds[i], 1.5f, lineCol);
+
+        int labelSz = static_cast<int>(8 * globalScale);
+        char idxBuf[4];
+        snprintf(idxBuf, sizeof(idxBuf), "%d", i);
+        int tw = MeasureText(idxBuf, labelSz);
+        DrawText(idxBuf,
+                 (int)(tileBounds[i].x + (tileBounds[i].width  - tw) / 2.0f),
+                 (int)(tileBounds[i].y + (tileBounds[i].height - labelSz) / 2.0f),
+                 labelSz, WHITE);
+    }
 
     float iconScale = globalScale * 0.06f;
     int boardNameSize = static_cast<int>(8 * globalScale);
