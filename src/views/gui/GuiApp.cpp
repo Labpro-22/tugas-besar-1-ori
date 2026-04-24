@@ -60,7 +60,6 @@ void GuiApp::run() {
         if (currentScreen->shouldChangeScreen) {
             currentScreen->shouldChangeScreen = false;
             switchScreen(currentScreen->nextScreen);
-            continue;
         }
 
         BeginDrawing();
