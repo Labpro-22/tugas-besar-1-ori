@@ -1,6 +1,8 @@
 #include "GameScreen.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 
 // ── Tile alignment tuning ────────────────────────────────────────────────────
 // Corner tiles width/height as fraction of board w/h  (user confirmed 2/14 ✓)
@@ -32,6 +34,7 @@ GameScreen::GameScreen(GameConfig& config)
       hasRolled(false), turnEnded(false),
       globalScale(1.0f), boardX(0), boardY(0), boardScale(1.0f),
       cornerRatioW(CORNER_RATIO_W), cornerRatioH(CORNER_RATIO_H),
+      aktaTexture{}, selectedTileIdx(-1),
       gameConfig(&config) {
     for (int i = 0; i < 6; i++) playerIcons[i] = {};
     for (int i = 0; i < 6; i++) diceTextures[i] = {};
@@ -191,6 +194,23 @@ void GameScreen::loadAssets() {
     pamTexture   = LoadTexture("assets/assets1/pam 1.png");
     plnTexture   = LoadTexture("assets/assets1/pln 1.png");
     trainTexture = LoadTexture("assets/assets1/train 1.png");
+    aktaTexture  = LoadTexture("assets/Akta_background.png");
+
+    std::ifstream boardFile("config/board.txt");
+    std::string line;
+    while (std::getline(boardFile, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line);
+        int pos; std::string code, name, type;
+        ss >> pos >> code >> name >> type;
+        if (pos >= 1 && pos <= 40) {
+            for (char& c : name) if (c == '_') c = ' ';
+            int idx = pos - 1;
+            tileData[idx].name = name;
+            tileData[idx].code = code;
+            tileData[idx].type = type;
+        }
+    }
 
     computeLayout();
 }
@@ -207,6 +227,7 @@ void GameScreen::unloadAssets() {
     UnloadTexture(pamTexture);
     UnloadTexture(plnTexture);
     UnloadTexture(trainTexture);
+    UnloadTexture(aktaTexture);
     btnPlay.unload();
     btnAssets.unload();
     btnPlayers.unload();
@@ -232,8 +253,26 @@ void GameScreen::update(float dt) {
     btnLog.setActive(activeTab == 3);
 
     if (IsKeyPressed(KEY_ESCAPE)) {
-        nextScreen = AppScreen::HOME;
-        shouldChangeScreen = true;
+        if (selectedTileIdx >= 0) {
+            selectedTileIdx = -1;
+        } else {
+            nextScreen = AppScreen::HOME;
+            shouldChangeScreen = true;
+        }
+    }
+
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        Vector2 mouse = GetMousePosition();
+        if (selectedTileIdx >= 0) {
+            selectedTileIdx = -1;
+        } else {
+            for (int i = 0; i < 40; i++) {
+                if (CheckCollisionPointRec(mouse, tileBounds[i])) {
+                    selectedTileIdx = i;
+                    break;
+                }
+            }
+        }
     }
 
     if (diceRolling) {
@@ -279,36 +318,7 @@ void GameScreen::draw() {
 
     DrawTextureEx(boardTexture, {boardX, boardY}, 0.0f, boardScale, WHITE);
 
-    for (int i = 0; i < 40; i++) {
-        int row, col;
-        getGridRC(i, row, col);
-
-        // colour per side: bottom=blue, left=green, top=orange, right=red, corner=purple
-        Color fillCol, lineCol;
-        if ((row == 0 || row == 10) && (col == 0 || col == 10)) {
-            fillCol = {180, 0, 255, 50};  lineCol = {160, 0, 255, 220};
-        } else if (row == 10) {
-            fillCol = {0, 100, 255, 50};  lineCol = {0,  80, 255, 220};
-        } else if (row == 0) {
-            fillCol = {255, 140, 0,  50};  lineCol = {230, 120, 0,  220};
-        } else if (col == 0) {
-            fillCol = {0,  200, 80,  50};  lineCol = {0,  170, 60,  220};
-        } else {
-            fillCol = {255, 30,  30,  50};  lineCol = {220, 20,  20,  220};
-        }
-
-        DrawRectangleRec(tileBounds[i], fillCol);
-        DrawRectangleLinesEx(tileBounds[i], 1.5f, lineCol);
-
-        int labelSz = static_cast<int>(8 * globalScale);
-        char idxBuf[4];
-        snprintf(idxBuf, sizeof(idxBuf), "%d", i);
-        int tw = MeasureText(idxBuf, labelSz);
-        DrawText(idxBuf,
-                 (int)(tileBounds[i].x + (tileBounds[i].width  - tw) / 2.0f),
-                 (int)(tileBounds[i].y + (tileBounds[i].height - labelSz) / 2.0f),
-                 labelSz, WHITE);
-    }
+    // hitboxes invisible — used only for click detection
 
     float iconScale = globalScale * 0.06f;
     int boardNameSize = static_cast<int>(8 * globalScale);
@@ -507,4 +517,46 @@ float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
     btnRollDice.draw();
     DrawRectangleLinesEx({btnRollDice.getX(), btnRollDice.getY(), btnRollDice.getWidth(), btnRollDice.getHeight()}, 2, BLACK);
     btnEndTurn.draw();
+
+    // ── Akta overlay ─────────────────────────────────────────────────────────
+    if (selectedTileIdx >= 0) {
+        float bw = boardTexture.width * boardScale;
+        float bh = boardTexture.height * boardScale;
+
+        DrawRectangle((int)boardX, (int)boardY, (int)bw, (int)bh, {0, 0, 0, 120});
+
+        float aktaScale = bw * 0.42f / (float)aktaTexture.width;
+        float aktaW = aktaTexture.width  * aktaScale;
+        float aktaH = aktaTexture.height * aktaScale;
+        float aktaX = boardX + (bw - aktaW) / 2.0f;
+        float aktaY = boardY + (bh - aktaH) / 2.0f;
+        DrawTextureEx(aktaTexture, {aktaX, aktaY}, 0.0f, aktaScale, WHITE);
+
+        const TileInfo& info = tileData[selectedTileIdx];
+
+        // Property name — centered in header
+        int nameSz = static_cast<int>(aktaH * 0.05f);
+        int nameW  = MeasureText(info.name.c_str(), nameSz);
+        DrawText(info.name.c_str(),
+                 (int)(aktaX + (aktaW - nameW) / 2.0f),
+                 (int)(aktaY + aktaH * 0.05f),
+                 nameSz, BLACK);
+
+        // Type — centered, below name
+        int typeSz = static_cast<int>(aktaH * 0.030f);
+        int typeW  = MeasureText(info.type.c_str(), typeSz);
+        DrawText(info.type.c_str(),
+                 (int)(aktaX + (aktaW - typeW) / 2.0f),
+                 (int)(aktaY + aktaH * 0.13f),
+                 typeSz, {148, 73, 68, 255});
+
+        // Dismiss hint
+        int hintSz = static_cast<int>(aktaH * 0.028f);
+        const char* hint = "Click anywhere to close";
+        int hintW = MeasureText(hint, hintSz);
+        DrawText(hint,
+                 (int)(aktaX + (aktaW - hintW) / 2.0f),
+                 (int)(aktaY + aktaH * 0.90f),
+                 hintSz, {160, 120, 100, 200});
+    }
 }

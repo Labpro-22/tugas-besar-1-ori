@@ -5,6 +5,7 @@
 #include "../components/Button.hpp"
 #include "config/GameConfig.hpp"
 #include "raylib.h"
+#include <string>
 
 class GameScreen : public Screen {
 private:
@@ -19,6 +20,11 @@ private:
     Texture2D pamTexture;
     Texture2D plnTexture;
     Texture2D trainTexture;
+    Texture2D aktaTexture;
+
+    struct TileInfo { std::string name, code, type; };
+    TileInfo tileData[40];
+    int selectedTileIdx;
 
     Button btnPlay;
     Button btnAssets;
