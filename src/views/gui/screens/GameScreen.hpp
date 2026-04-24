@@ -22,7 +22,12 @@ private:
     Texture2D trainTexture;
     Texture2D aktaTexture;
 
-    struct TileInfo { std::string name, code, type; };
+    struct TileInfo {
+        std::string name, code, type;
+        std::string colorGroup;
+        int buyPrice = 0, mortgageValue = 0, houseCost = 0, hotelCost = 0;
+        int rent[6] = {};
+    };
     TileInfo tileData[40];
     int selectedTileIdx;
 

@@ -196,19 +196,40 @@ void GameScreen::loadAssets() {
     trainTexture = LoadTexture("assets/assets1/train 1.png");
     aktaTexture  = LoadTexture("assets/Akta_background.png");
 
-    std::ifstream boardFile("config/board.txt");
     std::string line;
-    while (std::getline(boardFile, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        std::istringstream ss(line);
-        int pos; std::string code, name, type;
-        ss >> pos >> code >> name >> type;
-        if (pos >= 1 && pos <= 40) {
+    {
+        std::ifstream f("config/board.txt");
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream ss(line);
+            int pos; std::string code, name, type;
+            ss >> pos >> code >> name >> type;
+            if (pos < 1 || pos > 40) continue;
             for (char& c : name) if (c == '_') c = ' ';
             int idx = pos - 1;
             tileData[idx].name = name;
             tileData[idx].code = code;
             tileData[idx].type = type;
+        }
+    }
+    {
+        std::ifstream f("config/property.txt");
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream ss(line);
+            int pos; std::string code, name, type, color;
+            ss >> pos >> code >> name >> type >> color;
+            if (pos < 1 || pos > 40) continue;
+            for (char& c : color) if (c == '_') c = ' ';
+            int idx = pos - 1;
+            tileData[idx].colorGroup = color;
+            if (type == "STREET") {
+                ss >> tileData[idx].buyPrice >> tileData[idx].mortgageValue
+                   >> tileData[idx].houseCost >> tileData[idx].hotelCost;
+                for (int r = 0; r < 6; r++) ss >> tileData[idx].rent[r];
+            } else {
+                int dummy; ss >> dummy >> tileData[idx].mortgageValue;
+            }
         }
     }
 
@@ -534,15 +555,14 @@ float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
 
         const TileInfo& info = tileData[selectedTileIdx];
 
-        // Property name — centered in header
-        int nameSz = static_cast<int>(aktaH * 0.05f);
+        // ── Header: name + type ───────────────────────────────────────────────
+        int nameSz = static_cast<int>(aktaH * 0.055f);
         int nameW  = MeasureText(info.name.c_str(), nameSz);
         DrawText(info.name.c_str(),
                  (int)(aktaX + (aktaW - nameW) / 2.0f),
-                 (int)(aktaY + aktaH * 0.05f),
+                 (int)(aktaY + aktaH * 0.04f),
                  nameSz, BLACK);
 
-        // Type — centered, below name
         int typeSz = static_cast<int>(aktaH * 0.030f);
         int typeW  = MeasureText(info.type.c_str(), typeSz);
         DrawText(info.type.c_str(),
@@ -550,13 +570,91 @@ float playerNameBottom = iconY + iconSz + 10.0f * globalScale;
                  (int)(aktaY + aktaH * 0.13f),
                  typeSz, {148, 73, 68, 255});
 
-        // Dismiss hint
+        // ── Body: rows ────────────────────────────────────────────────────────
+        float lx  = aktaX + aktaW * 0.08f;           // left  text margin
+        float rx  = aktaX + aktaW * 0.92f;            // right text anchor
+        float ry  = aktaY + aktaH * 0.23f;            // current row Y
+        float rH  = aktaH * 0.052f;                   // row height
+        int   rSz = static_cast<int>(aktaH * 0.038f); // row font size
+        int   lSz = static_cast<int>(aktaH * 0.033f); // label font size
+        Color lC  = {80,  50, 40, 255};               // label colour
+        Color vC  = {30,  20, 15, 255};               // value colour
+        Color sC  = {148, 73, 68, 255};               // section title colour
+
+        char buf[64];
+
+        auto drawRow = [&](const char* label, const char* value) {
+            DrawText(label, (int)lx, (int)ry, rSz, lC);
+            int vw = MeasureText(value, rSz);
+            DrawText(value, (int)(rx - vw), (int)ry, rSz, vC);
+            ry += rH;
+        };
+        auto drawDivider = [&]() {
+            ry += rH * 0.1f;
+            DrawLineEx({lx, ry}, {rx, ry}, 0.8f, {160, 100, 80, 120});
+            ry += rH * 0.4f;
+        };
+        auto drawSection = [&](const char* title) {
+            DrawText(title, (int)lx, (int)ry, lSz, sC);
+            ry += rH * 0.75f;
+        };
+
+        if (info.type == "STREET") {
+            snprintf(buf, sizeof(buf), "Rp %d", info.buyPrice);
+            drawRow("Harga Beli",  buf);
+            snprintf(buf, sizeof(buf), "Rp %d", info.mortgageValue);
+            drawRow("Nilai Gadai", buf);
+
+            drawDivider();
+            drawSection("SEWA");
+            const char* rentLabels[6] = {"Lahan","1 Rumah","2 Rumah","3 Rumah","4 Rumah","Hotel"};
+            for (int r = 0; r < 6; r++) {
+                snprintf(buf, sizeof(buf), "Rp %d", info.rent[r]);
+                drawRow(rentLabels[r], buf);
+            }
+            drawDivider();
+            drawSection("BIAYA PEMBANGUNAN");
+            snprintf(buf, sizeof(buf), "Rp %d", info.houseCost);
+            drawRow("Rumah", buf);
+            snprintf(buf, sizeof(buf), "Rp %d", info.hotelCost);
+            drawRow("Hotel", buf);
+
+        } else if (info.type == "RAILROAD") {
+            snprintf(buf, sizeof(buf), "Rp %d", info.mortgageValue);
+            drawRow("Nilai Gadai", buf);
+            drawRow("Cara Beli",   "Gratis (mendarat)");
+
+            drawDivider();
+            drawSection("SEWA");
+            const int railRent[4] = {25, 50, 100, 200};
+            const char* railLabels[4] = {"1 Stasiun","2 Stasiun","3 Stasiun","4 Stasiun"};
+            for (int r = 0; r < 4; r++) {
+                snprintf(buf, sizeof(buf), "Rp %d", railRent[r]);
+                drawRow(railLabels[r], buf);
+            }
+
+        } else if (info.type == "UTILITY") {
+            snprintf(buf, sizeof(buf), "Rp %d", info.mortgageValue);
+            drawRow("Nilai Gadai", buf);
+            drawRow("Cara Beli",   "Gratis (mendarat)");
+
+            drawDivider();
+            drawSection("SEWA");
+            drawRow("1 Utilitas", "Dadu x 4");
+            drawRow("2 Utilitas", "Dadu x 10");
+
+        } else {
+            // Non-purchasable tiles (GO, Jail, Tax, etc.)
+            drawRow("Tipe", info.type.c_str());
+        }
+
+        // ── Hint ─────────────────────────────────────────────────────────────
         int hintSz = static_cast<int>(aktaH * 0.028f);
         const char* hint = "Click anywhere to close";
         int hintW = MeasureText(hint, hintSz);
         DrawText(hint,
                  (int)(aktaX + (aktaW - hintW) / 2.0f),
                  (int)(aktaY + aktaH * 0.90f),
-                 hintSz, {160, 120, 100, 200});
+                 hintSz, {160, 120, 100, 160});
     }
 }
