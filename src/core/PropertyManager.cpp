@@ -45,7 +45,7 @@ bool PropertyManager::mortgage(Player &owner, PropertyTile &tile)
     }
 
     tile.setMortgageStatus(true);
-    owner.addBalance(tile.getMortgageValue());
+    owner += tile.getMortgageValue();
     return true;
 }
 
@@ -67,7 +67,7 @@ bool PropertyManager::build(Player &owner, PropertyTile &tile)
         throw UnablePayBuildException();
     }
 
-    owner.addBalance(-cost);
+    owner += -cost;
     tile.setLevel(tile.getLevel() + 1);
     return true;
 }
@@ -108,7 +108,7 @@ bool PropertyManager::liquidate(Player &player, Tile &tile)
     }
 
     property->setMortgageStatus(true);
-    player.addBalance(property->getMortgageValue());
+    player += property->getMortgageValue();
     return true;
 }
 

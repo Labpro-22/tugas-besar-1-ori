@@ -5,6 +5,7 @@
 #include <vector>
 
 class Player;
+class GameContext;
 
 class Tile
 {
@@ -21,7 +22,7 @@ public:
     std::string getTileID() const;
     std::string getTileName() const;
     std::string getTileType() const;
-    virtual void onLanded(Player &player);
+    virtual void onLanded(Player &player, GameContext &ctx);
 };
 
 #endif

@@ -1,133 +1,203 @@
 #include "include/models/player/Player.hpp"
-
 #include <algorithm>
-#include <climits>
 
-void Player::move()
+Player::Player(std::string username) : 
+    username(username), 
+    curr_tile(0), 
+    balance(0),
+    status("ACTIVE"), 
+    skill_used(false), 
+    discount_active(0.0f), 
+    shield_active(false) 
 {
-    if (jail_counter > 0)
-    {
-        jail_counter--;
-        return;
-    }
-
-    Dice dice;
-    dice.throwDice();
-    curr_tile += dice.getTotal();
 }
 
-int Player::calculateNetWorth()
-{
-    long long net_worth = balance;
+void Player::move() {}
 
-    for (PropertyTile *property : owned_properties)
-    {
-        if (property == nullptr)
-        {
-            continue;
-        }
-
-        if (property->isMortgage())
-        {
-            net_worth += property->getMortgageValue();
-        }
-        else
-        {
-            net_worth += property->getBuyPrice();
-        }
-    }
-
-    if (net_worth > INT_MAX)
-    {
-        return INT_MAX;
-    }
-
-    if (net_worth < INT_MIN)
-    {
-        return INT_MIN;
-    }
-
-    return static_cast<int>(net_worth);
+std::string Player::getUsername() 
+{ 
+    return username; 
 }
 
-Player::Player(std::string username)
-    : username(username),
-      curr_tile(0),
-      balance(0),
-      jail_counter(0),
-      owned_properties(),
-      status("ACTIVE"),
-      skill_used(false),
-      discount_active(0.0F),
-      shield_active(false) {}
+int Player::getCurrTile() 
+{ 
+    return curr_tile; 
+}
 
-std::string Player::getUsername() { return username; }
-int Player::getCurrTile() { return curr_tile; }
-int Player::getBalance() { return balance; }
-int Player::getJailCounter() { return jail_counter; }
-std::vector<PropertyTile *> Player::getOwnedProperties() { return owned_properties; }
-std::string Player::getStatus() { return status; }
-bool Player::isSkillUsed() { return skill_used; }
-float Player::getDiscountActive() { return discount_active; }
-bool Player::isShieldActive() { return shield_active; }
-void Player::setCurrTile(int tile) { curr_tile = tile; }
-void Player::addBalance(int amount) { balance += amount; }
-void Player::setStatus(std::string newStatus) { status = newStatus; }
-void Player::setSkillUsed(bool used) { skill_used = used; }
-void Player::setDiscountActive(float discount) { discount_active = discount; }
-void Player::setShieldActive(bool active) { shield_active = active; }
+int Player::getBalance() 
+{ 
+    return balance; 
+}
 
-void Player::addOwnedProperty(PropertyTile *property)
+std::vector<PropertyTile *> Player::getOwnedProperties() 
+{ 
+    return owned_properties; 
+}
+
+std::string Player::getStatus() 
+{ 
+    return status; 
+}
+
+bool Player::isSkillUsed() 
+{ 
+    return skill_used; 
+}
+
+float Player::getDiscountActive() 
+{ 
+    return discount_active; 
+}
+
+bool Player::isShieldActive() 
+{ 
+    return shield_active; 
+}
+
+std::vector<SpecialPowerCard *> Player::getHandCards() const 
+{ 
+    return hand_cards; 
+}
+
+int Player::getHandSize() const 
+{ 
+    return static_cast<int>(hand_cards.size()); 
+}
+
+SpecialPowerCard *Player::getHandCard(int index) const 
 {
-    if (property == nullptr)
+    if (index >= 0 && index < static_cast<int>(hand_cards.size())) 
     {
-        return;
+        return hand_cards[index];
     }
+    return nullptr;
+}
 
-    for (PropertyTile *owned_property : owned_properties)
+void Player::setCurrTile(int tile) 
+{ 
+    curr_tile = tile; 
+}
+
+Player& Player::operator+=(int amount) 
+{
+    balance += amount;
+    return *this;
+}
+
+bool Player::operator<(const Player& other) const 
+{ 
+    return getNetWorth() < other.getNetWorth(); 
+}
+
+bool Player::operator>(const Player& other) const 
+{ 
+    return getNetWorth() > other.getNetWorth(); 
+}
+
+bool Player::operator<=(const Player& other) const 
+{ 
+    return getNetWorth() <= other.getNetWorth(); 
+}
+
+bool Player::operator>=(const Player& other) const 
+{ 
+    return getNetWorth() >= other.getNetWorth(); 
+}
+
+void Player::setStatus(std::string status) 
+{ 
+    this->status = status; 
+}
+
+void Player::setSkillUsed(bool used) 
+{ 
+    skill_used = used; 
+}
+
+void Player::setDiscountActive(float discount) 
+{ 
+    discount_active = discount; 
+}
+
+void Player::setShieldActive(bool active) 
+{ 
+    shield_active = active; 
+}
+
+void Player::addHandCard(SpecialPowerCard *card) 
+{
+    if (card) 
     {
-        if (owned_property == property)
+        hand_cards.push_back(card);
+    }
+}
+
+bool Player::removeHandCard(int index) 
+{
+    if (index >= 0 && index < static_cast<int>(hand_cards.size())) 
+    {
+        hand_cards.erase(hand_cards.begin() + index);
+        return true;
+    }
+    return false;
+}
+
+void Player::clearHandCards() 
+{ 
+    hand_cards.clear(); 
+}
+
+void Player::addOwnedProperty(PropertyTile *property) 
+{
+    if (property) 
+    {
+        property->setOwner(this);
+        owned_properties.push_back(property);
+    }
+}
+
+bool Player::removeOwnedProperty(std::string tile_code) 
+{
+    for (int i = 0; i < static_cast<int>(owned_properties.size()); i++) 
+    {
+        if (owned_properties[i] && owned_properties[i]->getTileCode() == tile_code) 
         {
-            return;
+            owned_properties[i]->setOwner(nullptr);
+            owned_properties.erase(owned_properties.begin() + i);
+            return true;
         }
     }
-
-    owned_properties.push_back(property);
-    property->setOwner(this);
+    return false;
 }
 
-bool Player::removeOwnedProperty(std::string tile_code)
-{
-    auto iterator = std::find_if(
-        owned_properties.begin(),
-        owned_properties.end(),
-        [&tile_code](PropertyTile *property)
-        {
-            return property != nullptr && property->getTileCode() == tile_code;
-        });
-
-    if (iterator == owned_properties.end())
-    {
-        return false;
-    }
-
-    if (*iterator != nullptr && (*iterator)->getTileOwner() == this)
-    {
-        (*iterator)->setOwner(nullptr);
-    }
-
-    owned_properties.erase(iterator);
-    return true;
-}
-
-void Player::clearTurnModifiers()
+void Player::clearTurnModifiers() 
 {
     skill_used = false;
-    discount_active = 0.0F;
+    discount_active = 0.0f;
     shield_active = false;
 }
 
-int Player::getNetWorth()
+int Player::calculateNetWorth() const 
 {
-    return calculateNetWorth();
+    int total = balance;
+    
+    for (auto *p : owned_properties) 
+    {
+        if (p) 
+        {
+            total += p->getBuyPrice();
+            if (p->getTileType() == "STREET" && p->getLevel() > 0) 
+            {
+                int bldCost = (p->getLevel() >= 5) ? p->getHotelCost() : p->getHouseCost() * p->getLevel();
+                total += bldCost / 2;
+            }
+        }
+    }
+    
+    return total;
+}
+
+int Player::getNetWorth() const 
+{ 
+    return calculateNetWorth(); 
 }

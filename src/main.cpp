@@ -1,8 +1,6 @@
-#include <iostream>
+#include "Origami.hpp"
 
 int main() {
-    
-    std::cout << "Hello world!\n";
-
+    Origami::run();
     return 0;
 }

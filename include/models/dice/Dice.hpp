@@ -20,6 +20,8 @@ public:
     bool isDouble() const;
     int getTotal() const;
     int getDoubleCount() const;
+    int getDie1() const;
+    int getDie2() const;
 };
 
 #endif

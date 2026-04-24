@@ -1,85 +1,76 @@
 #include "include/models/card/SpecialPowerCard.hpp"
 #include "include/models/player/Player.hpp"
 
-namespace
-{
-    int normalizePosition(int position, int board_size)
-    {
-        if (board_size <= 0)
-        {
-            return position;
-        }
+MoveCard::MoveCard(int value, int boardSize) : value(value), boardSize(boardSize) {}
 
-        int normalized_position = position % board_size;
-        if (normalized_position < 0)
-        {
-            normalized_position += board_size;
-        }
-        return normalized_position;
-    }
-
-    float clampDiscountFraction(int value)
-    {
-        if (value <= 0)
-        {
-            return 0.0F;
-        }
-        if (value >= 100)
-        {
-            return 1.0F;
-        }
-        return static_cast<float>(value) / 100.0F;
-    }
-} // namespace
-
-MoveCard::MoveCard(int value, int boardSize) : SpecialPowerCard(), value(value), boardSize(boardSize) {}
-
-int MoveCard::getMoveValue() const { return value; }
-
-void MoveCard::action(Player &player)
-{
-    int currentTile = player.getCurrTile();
-    int newTile = normalizePosition(currentTile + value, boardSize);
-    player.setCurrTile(newTile);
-    player.setSkillUsed(true);
+int MoveCard::getMoveValue() const 
+{ 
+    return value; 
 }
 
-DiscountCard::DiscountCard(int value) : SpecialPowerCard(), value(value) {}
-
-int DiscountCard::getDiscountValue() const { return value; }
-
-void DiscountCard::action(Player &player)
+void MoveCard::action(Player& player) 
 {
-    float discountFraction = clampDiscountFraction(value);
-    player.setDiscountActive(discountFraction);
-    player.setSkillUsed(true);
+    int cur = player.getCurrTile();
+    player.setCurrTile((cur + value) % boardSize);
 }
 
-ShieldCard::ShieldCard() : SpecialPowerCard() {}
-
-void ShieldCard::action(Player &player)
-{
-    player.setShieldActive(true);
-    player.setSkillUsed(true);
+std::string MoveCard::describe() const 
+{ 
+    return "MoveCard - Maju " + std::to_string(value) + " Petak"; 
 }
 
-TeleportCard::TeleportCard() : SpecialPowerCard() {}
+DiscountCard::DiscountCard(int value) : value(value) {}
 
-void TeleportCard::action(Player &player)
-{
-    player.setSkillUsed(true);
+int DiscountCard::getDiscountValue() const 
+{ 
+    return value; 
 }
 
-LassoCard::LassoCard() : SpecialPowerCard() {}
-
-void LassoCard::action(Player &player)
-{
-    player.setSkillUsed(true);
+void DiscountCard::action(Player& player) 
+{ 
+    player.setDiscountActive(static_cast<float>(value) / 100.0f); 
 }
 
-DemolitionCard::DemolitionCard() : SpecialPowerCard() {}
+std::string DiscountCard::describe() const 
+{ 
+    return "DiscountCard - Diskon " + std::to_string(value) + "%"; 
+}
 
-void DemolitionCard::action(Player &player)
-{
-    player.setSkillUsed(true);
+ShieldCard::ShieldCard() {}
+
+void ShieldCard::action(Player& player) 
+{ 
+    player.setShieldActive(true); 
+}
+
+std::string ShieldCard::describe() const 
+{ 
+    return "ShieldCard - Kebal tagihan/sanksi selama 1 turn"; 
+}
+
+TeleportCard::TeleportCard() {}
+
+void TeleportCard::action(Player& player) {}
+
+std::string TeleportCard::describe() const 
+{ 
+    return "TeleportCard - Pindah ke petak manapun"; 
+}
+
+LassoCard::LassoCard() {}
+
+void LassoCard::action(Player& player) {}
+
+std::string LassoCard::describe() const 
+{ 
+    return "LassoCard - Menarik lawan ke petak Anda"; 
+}
+
+DemolitionCard::DemolitionCard() {}
+
+void DemolitionCard::action(Player& player) {}
+
+std::string DemolitionCard::describe() const 
+{ 
+    return "DemolitionCard - Menghancurkan bangunan lawan"; 
 }

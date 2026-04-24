@@ -1,25 +1,38 @@
 #include "include/models/card/CommunityChest.hpp"
 #include "include/models/player/Player.hpp"
 
-HappyBirthdayCard::HappyBirthdayCard() : CommunityChestCard() {}
+HappyBirthdayCard::HappyBirthdayCard() {} 
 
-void HappyBirthdayCard::action(Player &player)
-{
-    // Multi-player transfer ditangani oleh CardManager.
-    (void)player;
+void HappyBirthdayCard::action(Player& player) 
+{ 
+    player += 100; 
 }
 
-SickCard::SickCard() : CommunityChestCard() {}
-
-void SickCard::action(Player &player)
-{
-    player.addBalance(-700);
+std::string HappyBirthdayCard::describe() const 
+{ 
+    return "Ini adalah hari ulang tahun Anda. Dapatkan M100 dari setiap pemain."; 
 }
 
-LegislativeCard::LegislativeCard() : CommunityChestCard() {}
+SickCard::SickCard() {}
 
-void LegislativeCard::action(Player &player)
-{
-    // Multi-player transfer ditangani oleh CardManager.
-    (void)player;
+void SickCard::action(Player& player) 
+{ 
+    player += -700; 
+}
+
+std::string SickCard::describe() const 
+{ 
+    return "Biaya dokter. Bayar M700."; 
+}
+
+LegislativeCard::LegislativeCard() {}
+
+void LegislativeCard::action(Player& player) 
+{ 
+    player += -200; 
+}
+
+std::string LegislativeCard::describe() const 
+{ 
+    return "Anda mau nyaleg. Bayar M200 kepada setiap pemain."; 
 }

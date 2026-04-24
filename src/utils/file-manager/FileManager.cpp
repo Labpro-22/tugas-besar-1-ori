@@ -1,10 +1,22 @@
 #include "include/utils/file-manager/FileManager.hpp"
+#include "include/core/GameConfig.hpp"
 
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "include/models/tiles/ChanceTile.hpp"
+#include "include/models/tiles/CommunityChestTile.hpp"
+#include "include/models/tiles/FestivalTile.hpp"
+#include "include/models/tiles/FreeParkingTile.hpp"
+#include "include/models/tiles/GoJailTile.hpp"
+#include "include/models/tiles/JailTile.hpp"
+#include "include/models/tiles/PropertyTile.hpp"
+#include "include/models/tiles/StartTile.hpp"
+#include "include/models/tiles/TaxTile.hpp"
 
 namespace
 {
@@ -110,7 +122,7 @@ void FileManager::saveConfig(
 
     for (const GameStates::PlayerState &player : state.players)
     {
-        output << player.username << " " << player.money << " " << player.tile_code << " " << player.status << "\n";
+        output << player.username << " " << player.money << " " << player.tile_code << " " << player.status << " " << (player.is_bot ? "1" : "0") << " " << player.jail_turns << "\n";
         output << player.hand_cards.size() << "\n";
         for (const GameStates::CardState &card : player.hand_cards)
             writeCardState(output, card);
@@ -179,13 +191,16 @@ GameStates::SaveState FileManager::loadConfig(
     {
         line = readNextNonemptyLine(input, line_number);
         tokens = splitByWhiteSpace(line);
-        if (tokens.size() != 4) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS>'.");
+        // Support both old format (4 tokens) and new format (5-6 tokens with is_bot, jail_turns)
+        if (tokens.size() < 4 || tokens.size() > 6) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS> [IS_BOT] [JAIL_TURNS]'.");
 
         GameStates::PlayerState player;
         player.username = tokens[0];
         player.money = parseIntegerToken(tokens[1], "UANG", line_number);
         player.tile_code = tokens[2];
         player.status = tokens[3];
+        player.is_bot = (tokens.size() >= 5 && tokens[4] == "1");
+        player.jail_turns = (tokens.size() >= 6) ? parseIntegerToken(tokens[5], "JAIL_TURNS", line_number) : 0;
 
         line = readNextNonemptyLine(input, line_number);
         tokens = splitByWhiteSpace(line);
@@ -283,4 +298,279 @@ GameStates::SaveState FileManager::loadConfig(
     }
 
     return state;
+}
+
+// ── loadBoard ─────────────────────────────────────────────────────────────────
+std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
+{
+    // --- 1. Parse property.txt → keyed by tile code ---
+    class PropData {
+    public:
+        std::string name, type, color;
+        int price = 0, mortgage = 0, houseCost = 0, hotelCost = 0;
+        std::vector<int> rent;
+    };
+
+    std::map<std::string, PropData> props;
+    {
+        std::ifstream pf(configDir + "property.txt");
+        std::string line;
+        while (std::getline(pf, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            int id;
+            std::string code, name, type, color;
+            if (!(iss >> id >> code >> name >> type >> color)) continue;
+            PropData d;
+            d.name = name; d.type = type; d.color = color;
+            if (!(iss >> d.price >> d.mortgage)) continue;
+            if (type == "STREET") {
+                if (!(iss >> d.houseCost >> d.hotelCost)) continue;
+                int r;
+                while (iss >> r) d.rent.push_back(r);
+            }
+            props[code] = d;
+        }
+    }
+
+    auto makeProp = [&](const std::string &code, const std::string &nameHint) -> Tile* {
+        auto it = props.find(code);
+        if (it == props.end())
+            return new Tile(code, code, nameHint, "UNKNOWN");
+        const auto &d = it->second;
+        std::vector<int> rent = d.rent.empty() ? std::vector<int>{0} : d.rent;
+        return new PropertyTile(
+            code, code, d.name, d.type,
+            rent, d.mortgage, 0,
+            false, d.color,
+            d.price, d.price,
+            d.houseCost, d.hotelCost,
+            1, 0
+        );
+    };
+
+    // --- 2a. Try aksi.txt + property.txt first (Revisi 2 spec). ---
+    // aksi.txt columns: ID KODE NAMA JENIS_PETAK WARNA
+    // We map JENIS_PETAK → internal type strings.
+    class AksiData { public: std::string code, name, jenis; };
+    std::map<int, AksiData> aksiByPos;
+    {
+        std::ifstream af(configDir + "aksi.txt");
+        if (af.is_open()) {
+            std::string line;
+            while (std::getline(af, line)) {
+                if (line.empty() || line[0] == '#') continue;
+                std::istringstream iss(line);
+                int pos; std::string code, name, jenis, warna;
+                if (!(iss >> pos >> code >> name >> jenis >> warna)) continue;
+                aksiByPos[pos] = {code, name, jenis};
+            }
+        }
+    }
+
+    // Helper: convert JENIS_PETAK + KODE to internal type
+    auto aksiInternalType = [](const std::string &jenis, const std::string &kode) -> std::string {
+        if (jenis == "SPESIAL") {
+            if (kode == "GO")  return "START";
+            if (kode == "PEN") return "JAIL";
+            if (kode == "BBP") return "FREE_PARKING";
+            if (kode == "PPJ") return "GO_JAIL";
+        } else if (jenis == "KARTU") {
+            if (kode == "DNU") return "COMMUNITY_CHEST";
+            if (kode == "KSP") return "CHANCE";
+        } else if (jenis == "PAJAK") {
+            if (kode == "PPH") return "TAX_PPH";
+            if (kode == "PBM") return "TAX_PBM";
+        } else if (jenis == "FESTIVAL") {
+            return "FESTIVAL";
+        }
+        return "UNKNOWN";
+    };
+
+    std::vector<Tile*> tiles;
+
+    // If aksi.txt was loaded successfully (has entries), build from aksi+property
+    if (!aksiByPos.empty()) {
+        // Determine total positions from aksi.txt + property.txt
+        int maxPos = 0;
+        for (const auto &[pos, _] : aksiByPos) if (pos > maxPos) maxPos = pos;
+        for (const auto &[code, d] : props) (void)d, (void)code; // props uses code as key; we need positions from property.txt itself
+
+        // Re-parse property.txt to get positions
+        class PropPos { public: int pos; std::string code; };
+        std::vector<PropPos> propPositions;
+        {
+            std::ifstream pf(configDir + "property.txt");
+            std::string line;
+            while (std::getline(pf, line)) {
+                if (line.empty() || line[0] == '#') continue;
+                std::istringstream iss(line);
+                int id; std::string code;
+                if (!(iss >> id >> code)) continue;
+                propPositions.push_back({id, code});
+                if (id > maxPos) maxPos = id;
+            }
+        }
+
+        // Build tile array indexed 1..maxPos
+        std::map<int, Tile*> byPos;
+        for (const auto &[pos, ad] : aksiByPos) {
+            std::string internalType = aksiInternalType(ad.jenis, ad.code);
+            std::string id = ad.code + std::to_string(pos);
+            Tile *tile = nullptr;
+            if      (internalType == "START")           tile = new StartTile(ad.code, id, ad.name, "START");
+            else if (internalType == "JAIL")            tile = new JailTile(ad.code, id, ad.name, "JAIL");
+            else if (internalType == "GO_JAIL")         tile = new GoJailTile(ad.code, id, ad.name, "GO_JAIL");
+            else if (internalType == "FREE_PARKING")    tile = new FreeParkingTile(ad.code, id, ad.name, "FREE_PARKING");
+            else if (internalType == "FESTIVAL")        tile = new FestivalTile(ad.code, id, ad.name, "FESTIVAL");
+            else if (internalType == "CHANCE")          tile = new ChanceTile(ad.code, id, ad.name, "CHANCE");
+            else if (internalType == "COMMUNITY_CHEST") tile = new CommunityChestTile(ad.code, id, ad.name, "COMMUNITY_CHEST");
+            else if (internalType == "TAX_PPH")         tile = new TaxTile(ad.code, id, ad.name, "TAX_PPH");
+            else if (internalType == "TAX_PBM")         tile = new TaxTile(ad.code, id, ad.name, "TAX_PBM");
+            else                                        tile = new Tile(ad.code, id, ad.name, internalType);
+            byPos[pos] = tile;
+        }
+        for (const auto &pp : propPositions) {
+            byPos[pp.pos] = makeProp(pp.code, pp.code);
+        }
+
+        for (int i = 1; i <= maxPos; i++) {
+            auto it = byPos.find(i);
+            if (it != byPos.end()) tiles.push_back(it->second);
+        }
+        if (!tiles.empty()) return tiles;
+    }
+
+    // --- 2b. Fallback: board.txt (legacy) ---
+    std::ifstream bf(configDir + "board.txt");
+    if (!bf.is_open())
+        throw SaveLoadException("Gagal membuka aksi.txt atau board.txt di: " + configDir);
+
+    std::string line;
+    int expectedPos = 1;
+    while (std::getline(bf, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream iss(line);
+        int pos;
+        std::string code, name, type;
+        if (!(iss >> pos >> code >> name >> type)) continue;
+
+        if (pos != expectedPos)
+            throw SaveLoadException("board.txt: urutan petak tidak berurutan (expected " +
+                                    std::to_string(expectedPos) + ", got " +
+                                    std::to_string(pos) + ")");
+
+        std::string id = code + std::to_string(pos);
+
+        Tile* tile = nullptr;
+        if      (type == "START")           tile = new StartTile(code, id, name, "START");
+        else if (type == "JAIL")            tile = new JailTile(code, id, name, "JAIL");
+        else if (type == "GO_JAIL")         tile = new GoJailTile(code, id, name, "GO_JAIL");
+        else if (type == "FREE_PARKING")    tile = new FreeParkingTile(code, id, name, "FREE_PARKING");
+        else if (type == "FESTIVAL")        tile = new FestivalTile(code, id, name, "FESTIVAL");
+        else if (type == "CHANCE")          tile = new ChanceTile(code, id, name, "CHANCE");
+        else if (type == "COMMUNITY_CHEST") tile = new CommunityChestTile(code, id, name, "COMMUNITY_CHEST");
+        else if (type == "TAX_PPH")         tile = new TaxTile(code, id, name, "TAX_PPH");
+        else if (type == "TAX_PBM")         tile = new TaxTile(code, id, name, "TAX_PBM");
+        else if (type == "STREET" || type == "RAILROAD" || type == "UTILITY")
+                                            tile = makeProp(code, name);
+        else                                tile = new Tile(code, id, name, type);
+
+        tiles.push_back(tile);
+        ++expectedPos;
+    }
+
+    return tiles;
+}
+
+// ── loadMiscConfig ────────────────────────────────────────────────────────────
+void FileManager::loadMiscConfig(const std::string &configDir,
+                                 int &outMaxTurn, int &outInitBalance)
+{
+    outMaxTurn     = 15;
+    outInitBalance = 1000;
+
+    std::ifstream file(configDir + "misc.txt");
+    if (!file.is_open()) return;
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream iss(line);
+        iss >> outMaxTurn >> outInitBalance;
+        return;
+    }
+}
+
+// ── loadGameConfig ────────────────────────────────────────────────────────────
+GameConfig FileManager::loadGameConfig(const std::string &configDir)
+{
+    int go_salary = 200, jail_fine = 50;
+    int pph_flat = 150, pph_percentage = 10, pbm_flat = 200;
+    int max_turn = 15, initial_balance = 1000;
+    std::map<int, int> railroad_rent;
+    std::map<int, int> utility_multiplier;
+
+    auto readFile = [&](const std::string &name) -> std::ifstream {
+        return std::ifstream(configDir + name);
+    };
+
+    // special.txt: GO_SALARY  JAIL_FINE
+    {
+        auto f = readFile("special.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            iss >> go_salary >> jail_fine;
+            break;
+        }
+    }
+    // railroad.txt: COUNT  RENT
+    {
+        auto f = readFile("railroad.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            int cnt, rent;
+            if (iss >> cnt >> rent) railroad_rent[cnt] = rent;
+        }
+    }
+    // utility.txt: COUNT  MULTIPLIER
+    {
+        auto f = readFile("utility.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            int cnt, mult;
+            if (iss >> cnt >> mult) utility_multiplier[cnt] = mult;
+        }
+    }
+    // tax.txt: PPH_FLAT  PPH_PERCENTAGE  PBM_FLAT
+    {
+        auto f = readFile("tax.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            iss >> pph_flat >> pph_percentage >> pbm_flat;
+            break;
+        }
+    }
+    // misc.txt: MAX_TURN  SALDO_AWAL
+    {
+        auto f = readFile("misc.txt");
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream iss(line);
+            iss >> max_turn >> initial_balance;
+            break;
+        }
+    }
+
+    return GameConfig(go_salary, jail_fine, pph_flat, pph_percentage, pbm_flat,
+                      max_turn, initial_balance, railroad_rent, utility_multiplier);
 }

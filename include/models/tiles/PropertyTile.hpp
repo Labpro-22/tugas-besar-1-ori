@@ -2,6 +2,7 @@
 #define PROPERTYTILE_HPP
 
 #include "include/models/tiles/Tile.hpp"
+#include <vector>
 
 class Player;
 
@@ -26,13 +27,15 @@ public:
     PropertyTile(
         const std::string &code, const std::string &id, const std::string &name, const std::string &type,
         std::vector<int> rent_price, int mortgage_value, int level,
-        bool mortgage_status, std::string color_group, int buy_price, int tile_cost, int upgrade_house_cost,
-        int upgrade_hotel_cost, int festival_multiplier, int festival_duration);
-
+        bool mortgage_status, std::string color_group, int buy_price, int tile_cost,
+        int upgrade_house_cost, int upgrade_hotel_cost, int festival_multiplier, int festival_duration
+    );
+    
+    void onLanded(Player &player, GameContext &ctx) override;
     int calculateRent() const;
+    int applyFestival(int base_rent) const;
     bool isMortgage() const;
     bool isMonopolized() const;
-
     std::vector<int> getRentPrice() const;
     int getMortgageValue() const;
     int getLevel() const;

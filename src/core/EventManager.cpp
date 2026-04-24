@@ -20,6 +20,30 @@ namespace
             to.addOwnedProperty(property);
         }
     }
+
+    void destroyAllBuildingsAndUnmortgage(Player &from)
+    {
+        const std::vector<PropertyTile *> properties = from.getOwnedProperties();
+        for (PropertyTile *property : properties)
+        {
+            if (property == nullptr) continue;
+            property->setLevel(0);
+            property->setMortgageStatus(false);
+            property->setMonopolized(false);
+            property->setFestivalState(1, 0);
+        }
+    }
+
+    void releasePropertiesToBank(Player &from)
+    {
+        const std::vector<PropertyTile *> properties = from.getOwnedProperties();
+        for (PropertyTile *property : properties)
+        {
+            if (property == nullptr) continue;
+            from.removeOwnedProperty(property->getTileCode());
+            property->setOwner(nullptr);
+        }
+    }
 } // namespace
 
 void EventManager::win(Player &p)
@@ -86,6 +110,14 @@ void EventManager::transferAsset(Player &p1, Player &p2)
         return;
     }
 
+    int remaining_cash = p1.getBalance();
+    if (remaining_cash > 0)
+    {
+        p1 += -remaining_cash;
+        p2 += remaining_cash;
+        pushEvent(p1.getUsername() + " transfers M" + std::to_string(remaining_cash) + " cash to " + p2.getUsername() + ".");
+    }
+
     transferAllProperties(p1, p2);
     pushEvent("Assets from " + p1.getUsername() + " are transferred to " + p2.getUsername() + ".");
 }
@@ -111,7 +143,16 @@ void EventManager::processBankruptcy(Player &debtor, const std::vector<Player *>
         return;
     }
 
+    // Bankrupt to bank: forfeit cash, destroy buildings, release properties, then auction.
+    int remaining_cash = debtor.getBalance();
+    if (remaining_cash > 0)
+    {
+        debtor += -remaining_cash;
+        pushEvent(debtor.getUsername() + " forfeits M" + std::to_string(remaining_cash) + " cash to the Bank.");
+    }
+    destroyAllBuildingsAndUnmortgage(debtor);
     auctionAll(debtor, participants);
+    releasePropertiesToBank(debtor);
 }
 
 void EventManager::recordAction(Player &player, const std::string &action_name)

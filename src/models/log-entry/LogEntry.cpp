@@ -6,7 +6,14 @@ LogEntry::LogEntry(int turn, const std::string &username, const std::string &act
     : turn(turn), username(username), actionType(actionType), description(description) {}
 
 std::string LogEntry::getLogEntry(){
-    return "[Turn " + std::to_string(turn) + "] " + username + "| " + actionType + "| " + description + "\n";
+    auto padRight = [](const std::string &s, int w) -> std::string {
+        if ((int)s.size() >= w) return s.substr(0, w);
+        return s + std::string(w - s.size(), ' ');
+    };
+    return "[Turn " + std::to_string(turn) + "] " +
+           padRight(username, 10) + "| " +
+           padRight(actionType, 8) + "| " +
+           description;
 }
 
 int LogEntry::getTurn() const { return turn; }

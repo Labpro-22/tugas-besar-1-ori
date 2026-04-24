@@ -74,6 +74,15 @@ void CardManager::transfer(Player &from, Player &to, int amount)
         return;
     }
 
-    from.addBalance(-amount);
-    to.addBalance(amount);
+    if (from.getStatus() == "BANKRUPT")
+    {
+        return;
+    }
+
+    int actual = std::min(amount, from.getBalance());
+    if (actual > 0)
+    {
+        from += -actual;
+        to += actual;
+    }
 }

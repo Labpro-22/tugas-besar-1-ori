@@ -23,7 +23,7 @@ bool BuyManager::buy(Player &buyer, Tile &tile)
         throw UnablePayPropertyException("Insufficient balance to buy this property.");
     }
 
-    buyer.addBalance(-price);
+    buyer += -price;
     buyer.addOwnedProperty(property);
     return true;
 }

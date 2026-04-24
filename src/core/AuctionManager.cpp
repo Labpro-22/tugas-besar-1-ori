@@ -89,7 +89,7 @@ AuctionManager::AuctionResult AuctionManager::auctionProperty(
     int final_bid = std::max(opening_bid, second_best_balance + 1);
     final_bid = std::min(final_bid, winner->getBalance());
 
-    winner->addBalance(-final_bid);
+    winner->operator+=(-final_bid);
     winner->addOwnedProperty(&tile);
 
     AuctionResult result;

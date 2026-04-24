@@ -9,6 +9,8 @@ class StepbackCard : public ChanceCard {
     public:
         StepbackCard(int boardSize);
         void action(Player& player) override;
+        std::string describe() const override;
+        std::string getCardType() const override { return "STEPBACK"; }
 };
 
 class NearestStreetCard : public ChanceCard {
@@ -18,6 +20,8 @@ class NearestStreetCard : public ChanceCard {
     public:
         NearestStreetCard(int boardSize, std::vector<int> stationPositions);
         void action(Player& player) override;
+        std::string describe() const override;
+        std::string getCardType() const override { return "NEAREST_STREET"; }
 };
 
 class JailCard : public ChanceCard {
@@ -26,6 +30,8 @@ class JailCard : public ChanceCard {
     public:
         JailCard(int jailPosition);
         void action(Player& player) override;
+        std::string describe() const override;
+        std::string getCardType() const override { return "JAIL_CARD"; }
 };
 
 #endif

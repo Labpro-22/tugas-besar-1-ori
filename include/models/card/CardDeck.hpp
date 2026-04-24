@@ -32,16 +32,6 @@ class CardDeck {
             return card;
         }
 
-        T* discard() {
-            if (draw_pile.empty()) {
-                return nullptr;
-            }
-            T* card = draw_pile.back();
-            draw_pile.pop_back();
-            discard_pile.push_back(card);
-            return card;
-        }
-
         void discardCard(T* card) {
             if (card != nullptr) {
                 discard_pile.push_back(card);
