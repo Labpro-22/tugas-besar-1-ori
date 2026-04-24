@@ -14,6 +14,11 @@ private:
     Texture2D playerIcons[6];
     Texture2D cardPanel;
     Texture2D diceTextures[6];
+    Texture2D houseTexture;
+    Texture2D hotelTexture;
+    Texture2D pamTexture;
+    Texture2D plnTexture;
+    Texture2D trainTexture;
 
     Button btnPlay;
     Button btnAssets;

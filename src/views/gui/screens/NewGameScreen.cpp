@@ -9,6 +9,7 @@ NewGameScreen::NewGameScreen(GameConfig& config) : bgTexture{}, playerCountLabel
     for (int i = 0; i < 6; i++) playerIcons[i] = {};
     iconSelected[0] = true;
     iconSelected[1] = true;
+    config.playerCount = playerCount;
     for (int i = 0; i < GameConfig::MAX_PLAYERS; i++) {
         nameCursorPos[i] = (int)std::strlen(config.playerNames[i]);
     }

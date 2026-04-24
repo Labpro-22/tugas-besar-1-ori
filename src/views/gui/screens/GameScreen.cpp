@@ -161,6 +161,12 @@ void GameScreen::loadAssets() {
     diceTextures[4] = LoadTexture("assets/assets1/dice-5-export 1.png");
     diceTextures[5] = LoadTexture("assets/assets1/dice-6-export 1.png");
 
+    houseTexture = LoadTexture("assets/assets1/house 1.png");
+    hotelTexture = LoadTexture("assets/assets1/hotel 1.png");
+    pamTexture   = LoadTexture("assets/assets1/pam 1.png");
+    plnTexture   = LoadTexture("assets/assets1/pln 1.png");
+    trainTexture = LoadTexture("assets/assets1/train 1.png");
+
     computeLayout();
 }
 
@@ -171,6 +177,11 @@ void GameScreen::unloadAssets() {
     UnloadTexture(cardPanel);
     for (int i = 0; i < 6; i++) UnloadTexture(playerIcons[i]);
     for (int i = 0; i < 6; i++) UnloadTexture(diceTextures[i]);
+    UnloadTexture(houseTexture);
+    UnloadTexture(hotelTexture);
+    UnloadTexture(pamTexture);
+    UnloadTexture(plnTexture);
+    UnloadTexture(trainTexture);
     btnPlay.unload();
     btnAssets.unload();
     btnPlayers.unload();
@@ -326,6 +337,86 @@ void GameScreen::draw() {
         drawActionBtn(btnAuction);
         drawActionBtn(btnBuildHouse);
         drawActionBtn(btnMortgage);
+    }
+
+    if (activeTab == 2) {
+        static const Color playerCardColors[6] = {
+            {200, 60,  60,  255},
+            {70,  120, 200, 255},
+            {70,  160, 90,  255},
+            {220, 140, 50,  255},
+            {140, 80,  180, 255},
+            {50,  170, 170, 255},
+        };
+
+        float pad     = 12.0f * globalScale;
+        float listX   = cardX + pad + 20.0f;
+        float listY   = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f;
+        float listW   = cardPanel.width * cardScale - 6.0f * pad;
+        float cardH   = 58.0f * globalScale;
+        float cardGap = 5.0f * globalScale;
+        float iconBox = cardH - 8.0f * globalScale;
+
+        int nameSz  = static_cast<int>(15 * globalScale);
+        int statSz  = static_cast<int>(15 * globalScale);
+        float statIconH = static_cast<float>(statSz + 4) * globalScale;
+
+        int count = gameConfig->playerCount;
+        for (int i = 0; i < count; i++) {
+            float cy = listY + i * (cardH + cardGap);
+
+            Color bg = (i == currentPlayerIdx)
+                       ? Color{255, 243, 160, 255}
+                       : Color{255, 243, 210, 255};
+            DrawRectangleRec({listX, cy, listW, cardH}, bg);
+            DrawRectangleLinesEx({listX, cy, listW, cardH}, 2.0f, {50, 25, 20, 255});
+
+            float iconBoxX = listX + 4.0f * globalScale;
+            float iconBoxY = cy + (cardH - iconBox) / 2.0f;
+            DrawRectangleRec({iconBoxX, iconBoxY, iconBox, iconBox}, playerCardColors[i % 6]);
+            float iconSc = iconBox / (float)playerIcons[i].width;
+            DrawTextureEx(playerIcons[i], {iconBoxX, iconBoxY}, 0.0f, iconSc, WHITE);
+
+            float textX = iconBoxX + iconBox + 8.0f * globalScale;
+            float nameY = cy + 8.0f * globalScale;
+            DrawText(gameConfig->playerNames[i], static_cast<int>(textX), static_cast<int>(nameY), nameSz, BLACK);
+
+            if (i == currentPlayerIdx) {
+                int nw = MeasureText(gameConfig->playerNames[i], nameSz);
+                int turnSz = static_cast<int>(10 * globalScale);
+                DrawText("- turn",
+                         static_cast<int>(textX + nw + 8 * globalScale),
+                         static_cast<int>(nameY + 1 * globalScale),
+                         turnSz, {148, 73, 68, 255});
+            }
+
+            float statsY = nameY + nameSz + 4.0f * globalScale;
+            float cx = textX;
+
+            auto drawStat = [&](Texture2D& tex, int count) {
+                char buf[8];
+                snprintf(buf, sizeof(buf), "%d", count);
+                float sc = statIconH / (float)tex.height;
+                DrawTextureEx(tex, {cx, statsY - 1.0f * globalScale}, 0.0f, sc, WHITE);
+                cx += tex.width * sc + 2.0f * globalScale;
+                DrawText(buf, static_cast<int>(cx), static_cast<int>(statsY), statSz, BLACK);
+                cx += MeasureText(buf, statSz) + 8.0f * globalScale;
+            };
+
+            char moneyBuf[16];
+            snprintf(moneyBuf, sizeof(moneyBuf), "$1,500");
+            DrawText(moneyBuf, static_cast<int>(cx), static_cast<int>(statsY), statSz, BLACK);
+            cx += MeasureText(moneyBuf, statSz) + 8.0f * globalScale;
+
+            drawStat(houseTexture, 2);
+            drawStat(hotelTexture, 1);
+            drawStat(pamTexture,   1);
+            drawStat(plnTexture,   1);
+            float sc = statIconH / (float)trainTexture.height;
+            DrawTextureEx(trainTexture, {cx, statsY - 1.0f * globalScale}, 0.0f, sc, WHITE);
+            cx += trainTexture.width * sc + 2.0f * globalScale;
+            DrawText("1", static_cast<int>(cx), static_cast<int>(statsY), statSz, BLACK);
+        }
     }
 
     float iconSz = cardPanel.width * cardScale * 0.15f;
