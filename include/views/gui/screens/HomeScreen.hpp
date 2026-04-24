@@ -1,8 +1,8 @@
 #ifndef HOMESCREEN_HPP
 #define HOMESCREEN_HPP
 
-#include "../Screen.hpp"
-#include "../components/Button.hpp"
+#include "views/gui/Screen.hpp"
+#include "views/gui/components/Button.hpp"
 #include "raylib.h"
 
 class HomeScreen : public Screen {

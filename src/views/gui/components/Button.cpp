@@ -1,4 +1,4 @@
-#include "Button.hpp"
+#include "views/gui/components/Button.hpp"
 
 Button::Button() : texture{}, hoverTexture{}, x(0), y(0), scale(1.0f),
     width(0), height(0), loaded(false), useHover(false),

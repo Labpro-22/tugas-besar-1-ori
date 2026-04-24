@@ -2,7 +2,7 @@
 #define GUIAPP_HPP
 
 #include <memory>
-#include "Screen.hpp"
+#include "views/gui/Screen.hpp"
 #include "config/GameConfig.hpp"
 
 class GuiApp {
@@ -21,7 +21,7 @@ public:
     GuiApp(int w = 1280, int h = 720, const char* t = "Nimonspoli");
     ~GuiApp();
 
-    GameConfig& getGameConfig() { return gameConfig; }
+    GameConfig& getGameConfig();
     void run();
 };
 

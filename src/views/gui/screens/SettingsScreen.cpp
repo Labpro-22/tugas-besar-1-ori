@@ -1,4 +1,4 @@
-#include "SettingsScreen.hpp"
+#include "views/gui/screens/SettingsScreen.hpp"
 #include <cmath>
 
 SettingsScreen::SettingsScreen()

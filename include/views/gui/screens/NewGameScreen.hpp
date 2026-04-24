@@ -1,8 +1,8 @@
 #ifndef NEWGAMESCREEN_HPP
 #define NEWGAMESCREEN_HPP
 
-#include "../Screen.hpp"
-#include "../components/Button.hpp"
+#include "views/gui/Screen.hpp"
+#include "views/gui/components/Button.hpp"
 #include "config/GameConfig.hpp"
 #include "raylib.h"
 #include <vector>

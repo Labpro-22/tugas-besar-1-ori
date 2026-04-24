@@ -1,4 +1,4 @@
-#include "HomeScreen.hpp"
+#include "views/gui/screens/HomeScreen.hpp"
 #include <cmath>
 
 HomeScreen::HomeScreen() : bgTexture{}, titleTexture{}, titleScale(0.5f), titleX(0), titleY(0),

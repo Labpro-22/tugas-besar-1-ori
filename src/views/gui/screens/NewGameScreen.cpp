@@ -1,4 +1,4 @@
-#include "NewGameScreen.hpp"
+#include "views/gui/screens/NewGameScreen.hpp"
 #include <cmath>
 #include <cstring>
 

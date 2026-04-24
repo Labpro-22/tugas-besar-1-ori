@@ -1,7 +1,7 @@
 #ifndef SETTINGSSCREEN_HPP
 #define SETTINGSSCREEN_HPP
 
-#include "../Screen.hpp"
+#include "views/gui/Screen.hpp"
 #include "../components/Button.hpp"
 #include "raylib.h"
 

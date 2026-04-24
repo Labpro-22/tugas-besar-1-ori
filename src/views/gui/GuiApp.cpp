@@ -1,12 +1,14 @@
-#include "GuiApp.hpp"
-#include "screens/HomeScreen.hpp"
-#include "screens/NewGameScreen.hpp"
-#include "screens/GameScreen.hpp"
-#include "screens/SettingsScreen.hpp"
+#include "views/gui/GuiApp.hpp"
+#include "views/gui/screens/HomeScreen.hpp"
+#include "views/gui/screens/NewGameScreen.hpp"
+#include "views/gui/screens/GameScreen.hpp"
+#include "views/gui/screens/SettingsScreen.hpp"
 #include "raylib.h"
 
 GuiApp::GuiApp(int w, int h, const char* t)
     : screenWidth(w), screenHeight(h), title(t), activeScreen(AppScreen::HOME) {}
+
+GameConfig& GuiApp::getGameConfig() { return gameConfig; }
 
 GuiApp::~GuiApp() {
     if (currentScreen) {

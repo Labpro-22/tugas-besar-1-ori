@@ -1,4 +1,4 @@
-#include "GameScreen.hpp"
+#include "views/gui/screens/GameScreen.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
