@@ -1,5 +1,4 @@
 #include "utils/exceptions/InsufficientMoneyException.hpp"
 
-InsufficientMoneyException::InsufficientMoneyException() : GeneralException("You don't have sufficient money!") {}
-
+InsufficientMoneyException::InsufficientMoneyException() : GeneralException("Uang tidak cukup.") {}
 InsufficientMoneyException::InsufficientMoneyException(const std::string& msg) : GeneralException(msg) {}

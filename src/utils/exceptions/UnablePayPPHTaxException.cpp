@@ -1,5 +1,4 @@
 #include "utils/exceptions/UnablePayPPHTaxException.hpp"
 
-UnablePayPPHTaxException::UnablePayPPHTaxException() : GeneralException("You are unable to pay the PPH tax!") {}
-
+UnablePayPPHTaxException::UnablePayPPHTaxException() : GeneralException("Tidak mampu membayar pajak PPH.") {}
 UnablePayPPHTaxException::UnablePayPPHTaxException(const std::string& msg) : GeneralException(msg) {}
