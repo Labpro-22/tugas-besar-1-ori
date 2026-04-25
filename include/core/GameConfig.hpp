@@ -16,7 +16,7 @@ public:
 
     GameConfig() {
         for (int i = 0; i < MAX_PLAYERS; i++)
-            std::snprintf(playerNames[i], MAX_NAME_LEN + 1, "Player %d", i + 1);
+            std::snprintf(playerNames[i], MAX_NAME_LEN + 1, "Pemain%d", i + 1);
     }
 
     GameConfig(int go_salary,

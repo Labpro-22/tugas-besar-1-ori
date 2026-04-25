@@ -10,6 +10,10 @@
 #include "include/models/player/Player.hpp"
 #include "include/models/player/Bot.hpp"
 #include "include/models/tiles/PropertyTile.hpp"
+#ifdef GUI_MODE
+#include "include/utils/exceptions/UnablePayPPHTaxException.hpp"
+#include "include/utils/exceptions/UnablePayPBMTaxException.hpp"
+#endif
 #include "include/models/card/ChanceCard.hpp"
 #include "include/models/card/CommunityChest.hpp"
 #include "include/utils/exceptions/UnablePayBuildException.hpp"
@@ -158,6 +162,9 @@ void LandingProcessor::handlePropertyLanding(Player &p, PropertyTile &prop) {
         }
     } else if (owner == &p) {
         cout << "Ini properti Anda sendiri.\n";
+    } else if (owner->getStatus() == "JAIL") {
+        cout << owner->getUsername() << " sedang di penjara. Tidak ada sewa.\n";
+        state.addLog(p, "SEWA_BEBAS", prop.getTileCode() + " (pemilik di penjara)");
     } else {
         if (p.isShieldActive()) {
             cout << "[SHIELD ACTIVE]: Efek ShieldCard melindungi Anda!\n";
@@ -210,7 +217,15 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
             choice = (flatAmt <= pctAmt) ? 1 : 2;
             cout << "Bot memilih opsi " << choice << ".\n";
         } else {
+#ifdef GUI_MODE
+            // In GUI mode, PPH choice is handled by the GUI before applyLanding is called.
+            // If we somehow reach here, default to the cheaper option.
+            int flatAmt2 = TaxManager::calculatePPHFlat(state.config);
+            int pctAmt2  = TaxManager::calculatePPHPct(p, state.config);
+            choice = (flatAmt2 <= pctAmt2) ? 1 : 2;
+#else
             choice = readInt("Pilihan (1/2): ", 1, 2);
+#endif
         }
 
         if (choice == 1) {
@@ -245,6 +260,11 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
             cout << p.getUsername() << " membayar pajak M" << amt << ".\n";
             state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
         } else {
+#ifdef GUI_MODE
+            // Throw so GUI can show debt recovery UI instead of blocking on stdin
+            if (taxType == "TAX_PPH") throw UnablePayPPHTaxException("Pajak PPH M" + to_string(amt));
+            if (taxType == "TAX_PBM") throw UnablePayPBMTaxException("Pajak PBM M" + to_string(amt));
+#else
             if (rentCollector) {
                 rentCollector->recoverForDebt(p, amt, nullptr, "pajak");
             }
@@ -253,6 +273,7 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
                 cout << p.getUsername() << " membayar pajak M" << amt << ".\n";
                 state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
             }
+#endif
         }
     }
 }

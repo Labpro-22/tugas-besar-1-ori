@@ -183,7 +183,9 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::buildPlayersFromState(con
     map<string, Player*> byName;
 
     for (const auto &s : sstate.players) {
-        Player *p = s.is_bot ? static_cast<Player*>(new Bot(s.username)) : new Player(s.username);
+        std::string name = s.username;
+        std::replace(name.begin(), name.end(), '_', ' ');
+        Player *p = s.is_bot ? static_cast<Player*>(new Bot(name)) : new Player(name);
         p->operator+=(s.money);
         p->setStatus((s.status == "JAILED") ? "JAIL" : s.status);
         ps.push_back(p);
@@ -220,7 +222,9 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
     }
 
     for (const auto &ps : sstate.players) {
-        auto it = byName.find(ps.username);
+        std::string lookupName = ps.username;
+        std::replace(lookupName.begin(), lookupName.end(), '_', ' ');
+        auto it = byName.find(lookupName);
         if (it == byName.end()) continue;
 
         int idx = state->board.getTileIndex(ps.tile_code);
@@ -250,11 +254,12 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
             }
 
             if (card) {
+                state->skill_cards.push_back(card);  // track ownership for ~GameState
                 it->second->addHandCard(card);
             }
         }
 
-        if (ps.status == "JAIL" && ps.jail_turns > 0) {
+        if (ps.status == "JAIL") {  // restore even if jail_turns == 0 (just entered)
             state->jail_turns[it->second] = ps.jail_turns;
         }
     }
@@ -280,7 +285,9 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
         prop->setLevel(lvl);
 
         if (ps.owner_username != "BANK") {
-            auto it = byName.find(ps.owner_username);
+            std::string ownerName = ps.owner_username;
+            std::replace(ownerName.begin(), ownerName.end(), '_', ' ');
+            auto it = byName.find(ownerName);
             if (it != byName.end()) {
                 it->second->addOwnedProperty(prop);
             }
@@ -298,6 +305,7 @@ GameStates::SaveState GameLoop::buildSaveState() const {
     for (auto *p : state->players) {
         GameStates::PlayerState ps;
         ps.username = p->getUsername();
+        std::replace(ps.username.begin(), ps.username.end(), ' ', '_');
         ps.money = p->getBalance();
         ps.status = (p->getStatus() == "JAIL") ? "JAILED" : p->getStatus();
         
@@ -324,11 +332,15 @@ GameStates::SaveState GameLoop::buildSaveState() const {
     }
 
     for (auto *p : state->turn_order) {
-        s.turn_order.push_back(p->getUsername());
+        std::string name = p->getUsername();
+        std::replace(name.begin(), name.end(), ' ', '_');
+        s.turn_order.push_back(name);
     }
 
     if (state->active_player_id >= 0 && state->active_player_id < static_cast<int>(state->players.size())) {
-        s.active_turn_player = state->players[state->active_player_id]->getUsername();
+        std::string name = state->players[state->active_player_id]->getUsername();
+        std::replace(name.begin(), name.end(), ' ', '_');
+        s.active_turn_player = name;
     }
 
     for (auto *t : state->tiles) {
@@ -338,7 +350,11 @@ GameStates::SaveState GameLoop::buildSaveState() const {
         GameStates::PropertyState ps;
         ps.tile_code = prop->getTileCode();
         ps.type = prop->getTileType();
-        ps.owner_username = prop->getTileOwner() ? prop->getTileOwner()->getUsername() : "BANK";
+        ps.owner_username = prop->getTileOwner() ? [&]() {
+            std::string name = prop->getTileOwner()->getUsername();
+            std::replace(name.begin(), name.end(), ' ', '_');
+            return name;
+        }() : "BANK";
         ps.status = prop->isMortgage() ? "MORTGAGED" : (prop->getTileOwner() ? "OWNED" : "BANK");
         ps.festival_multiplier = prop->getFestivalMultiplier();
         ps.festival_duration = prop->getFestivalDuration();
@@ -582,7 +598,8 @@ void GameLoop::saveToFile(const std::string& filepath) {
     if (!state) return;
     auto sstate = buildSaveState();
     GameStates::SavePermission perm;
-    perm.is_at_start_of_turn = !state->game_over;
+    perm.is_at_start_of_turn = true;  // GUI: allow save anytime
+    std::filesystem::create_directories(std::filesystem::path(filepath).parent_path());
     FileManager::saveConfig(filepath, sstate, perm);
 }
 

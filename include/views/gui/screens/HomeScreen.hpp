@@ -4,6 +4,7 @@
 #include "views/gui/Screen.hpp"
 #include "views/gui/components/Button.hpp"
 #include "raylib.h"
+#include <string>
 
 class HomeScreen : public Screen {
 private:

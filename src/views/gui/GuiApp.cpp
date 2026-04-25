@@ -1,4 +1,5 @@
 #include "views/gui/GuiApp.hpp"
+#include <string>
 #include "views/gui/screens/HomeScreen.hpp"
 #include "views/gui/screens/NewGameScreen.hpp"
 #include "views/gui/screens/GameScreen.hpp"
@@ -41,18 +42,24 @@ void GuiApp::switchScreen(AppScreen screen) {
         case AppScreen::LOAD_GAME:
             currentScreen = std::make_unique<HomeScreen>();
             break;
-        case AppScreen::GAME:
+        case AppScreen::GAME: {
+            std::string loadErrMsg;
             if (loadSave) {
                 try {
                     gameLoop = GameLoop::buildFromSave(savePath, "config/");
+                } catch (const std::exception& e) {
+                    gameLoop = GameLoop::buildForGui(gameConfig, "config/");
+                    loadErrMsg = std::string(e.what());
                 } catch (...) {
                     gameLoop = GameLoop::buildForGui(gameConfig, "config/");
+                    loadErrMsg = "Error tidak dikenal saat memuat save.";
                 }
             } else {
                 gameLoop = GameLoop::buildForGui(gameConfig, "config/");
             }
-            currentScreen = std::make_unique<GameScreen>(gameLoop);
+            currentScreen = std::make_unique<GameScreen>(gameLoop, loadErrMsg);
             break;
+        }
         case AppScreen::SETTINGS:
             currentScreen = std::make_unique<SettingsScreen>();
             break;

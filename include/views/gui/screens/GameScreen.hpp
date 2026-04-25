@@ -4,6 +4,7 @@
 #include "views/gui/Screen.hpp"
 #include "views/gui/components/Button.hpp"
 #include "raylib.h"
+#include <deque>
 #include <map>
 #include <memory>
 #include <string>
@@ -48,7 +49,7 @@ private:
     // ── Core buttons ──────────────────────────────────────────────────────
     Button btnPlay, btnAssets, btnPlayers, btnLog;
     Button btnRollDice, btnEndTurn;
-    Button btnBuyProperty, btnAuction, btnBuildHouse, btnMortgage, btnRedeem;
+    Button btnAuction, btnBuildHouse, btnMortgage, btnRedeem;
     Button btnSaveGame;
     Button btnPopupOk;
 
@@ -93,8 +94,10 @@ private:
     std::unique_ptr<CardProcessor>       cardProc;
     std::unique_ptr<BotController>       botCtrl;
 
-    // ── Game messages ─────────────────────────────────────────────────────
-    std::string lastEvent;
+    // ── Event log (shown in info box) ────────────────────────────────────
+    std::deque<std::string> eventLog;  // newest at front
+    static constexpr int EVENT_LOG_MAX = 8;
+    void pushLog(const std::string& msg);
 
     // ── Generic popup ─────────────────────────────────────────────────────
     bool        showPopup;
@@ -121,12 +124,18 @@ private:
     std::string cardSelectMsg;         // hint text shown while selecting
     Button      btnSkillCards[4];      // per card in current player's hand
 
-    // For LASSO / DEMOLITION selection popup
-    bool        showSelPopup = false;  // selection-list popup
+    // For LASSO / DEMOLITION / GADAI / TEBUS selection popup
+    enum class SelAction { NONE, LASSO, DEMOLITION_PLAYER, DEMOLITION_PROP, GADAI, TEBUS };
+    bool        showSelPopup = false;
     std::string selPopupTitle;
-    std::vector<std::string> selOptions;
-    std::vector<Button>      btnSelOptions;
+    std::vector<std::string>  selOptions;
+    std::vector<Button>       btnSelOptions;
     int         selPopupResult = -1;   // -1 = pending, >=0 = chosen idx
+    SelAction   selAction = SelAction::NONE;
+
+    // Cached property lists for gadai/tebus selection
+    std::vector<PropertyTile*> gadaiProps;
+    std::vector<PropertyTile*> tebusProps;
 
     // Two-step DEMOLITION: first pick player, then pick property
     int         demolitionPlayerPick = -1;
@@ -155,6 +164,29 @@ private:
     std::vector<PropertyTile*> festivalProps;
     std::vector<Button> btnFestivalProps;
     Button btnFestivalCancel;
+    float festivalScroll = 0.0f;
+
+    // ── Property landing popup (BUY / AUCTION) ────────────────────────────
+    bool propertyLandingPending = false;
+    int  propertyLandingTileIdx = -1;
+    bool propertyLandingDouble  = false;
+    Button btnPropBuy;
+    Button btnPropAuction;
+
+    // ── Save popup ────────────────────────────────────────────────────────
+    bool saveMode = false;
+    char saveInputBuf[64] = "savegame";
+    int  saveInputLen = 8;
+    Button btnSaveConfirm;
+    Button btnSaveCancel;
+
+    // ── Debt recovery mode (can't afford rent/tax) ───────────────────────
+    bool    debtMode     = false;   // player can't afford landing → must gadai/lelang
+    bool    debtLanding  = false;   // applyLanding still pending after debt resolved
+    int     debtAmount   = 0;       // how much is owed
+    Button  btnDebtGadai;
+    Button  btnDebtLelang;
+    Button  btnDebtForce;           // force-proceed even if still broke (bankruptcy)
 
     // ── Game over ─────────────────────────────────────────────────────────
     bool gameOverOverlay;
@@ -167,7 +199,6 @@ private:
     void handleEndTurn();
     bool currentPlayerIsBot()    const;
     bool currentPlayerIsJailed() const;
-    bool canBuyCurrentTile()     const;
     bool checkFestival(Player& p);
     Color getColorGroupColor(const std::string& group) const;
     bool checkPPH(Player& p);   // true if PPH popup triggered
@@ -186,12 +217,16 @@ private:
     void drawSkillCardSection(float cardX, float cardScale, float startY);
 
     // Selection popup
-    void openSelPopup(const std::string& title, const std::vector<std::string>& opts);
+    void openSelPopup(const std::string& title, const std::vector<std::string>& opts,
+                      SelAction action = SelAction::NONE);
+    void openGadaiPopup();
+    void openTebusPopup();
     void updateSelPopup();
     void drawSelPopup();
 
     // Draw sub-sections
     void drawPlayTab(float cardX, float cardScale);
+    void drawDebtMode(float cardX, float cardScale);
     void drawAssetsTab(float cardX, float cardScale);
     void drawPlayersTab(float cardX, float cardScale);
     void drawLogTab(float cardX, float cardScale);
@@ -200,7 +235,7 @@ private:
     void drawGameOverOverlay();
 
 public:
-    GameScreen(GameLoop* loop);
+    GameScreen(GameLoop* loop, const std::string& initMsg = "");
     ~GameScreen();
     void loadAssets()   override;
     void unloadAssets() override;

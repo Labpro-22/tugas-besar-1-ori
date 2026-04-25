@@ -21,6 +21,10 @@
 #include "models/card/SpecialPowerCard.hpp"
 #include "utils/exceptions/SaveLoadException.hpp"
 #include "utils/exceptions/UnablePayBuildException.hpp"
+#include "utils/exceptions/GeneralException.hpp"
+#include "utils/exceptions/UnablePayRentException.hpp"
+#include "utils/exceptions/UnablePayPPHTaxException.hpp"
+#include "utils/exceptions/UnablePayPBMTaxException.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -46,7 +50,7 @@ static void getGridRC(int i, int& row, int& col) {
 }
 
 // ─── constructor / destructor ─────────────────────────────────────────────────
-GameScreen::GameScreen(GameLoop* loop)
+GameScreen::GameScreen(GameLoop* loop, const std::string& initMsg)
     : bgTexture{}, blurredBgTexture{}, boardTexture{}, cardPanel{},
       aktaTexture{}, selectedTileIdx(-1),
       activeTab(0),
@@ -56,8 +60,12 @@ GameScreen::GameScreen(GameLoop* loop)
       globalScale(1.0f), boardX(0), boardY(0), boardScale(1.0f),
       cornerRatioW(CORNER_RATIO_W), cornerRatioH(CORNER_RATIO_H),
       gameLoop(loop), gs(loop ? loop->getState() : nullptr),
-      lastEvent(""), showPopup(false), gameOverOverlay(false)
+      showPopup(!initMsg.empty()), gameOverOverlay(false)
 {
+    if (!initMsg.empty()) {
+        popupTitle = "LOAD GAGAL";
+        popupMsg   = initMsg;
+    }
     for (int i = 0; i < 4; i++) playerIconsB[i]  = {};
     for (int i = 0; i < 4; i++) playerIconsNb[i] = {};
     for (int i = 0; i < 6; i++) diceTextures[i] = {};
@@ -81,11 +89,19 @@ void GameScreen::initProcessors() {
                                                     *cardProc, *rentCollector);
 }
 
-// ─── drainAndStoreEvents ──────────────────────────────────────────────────────
+// ─── pushLog / drainAndStoreEvents ───────────────────────────────────────────
+void GameScreen::pushLog(const std::string& msg) {
+    if (msg.empty()) return;
+    eventLog.push_front(msg);
+    while ((int)eventLog.size() > EVENT_LOG_MAX)
+        eventLog.pop_back();
+}
+
 void GameScreen::drainAndStoreEvents() {
     if (!gs) return;
     auto evts = gs->events.drainEvents();
-    if (!evts.empty()) lastEvent = evts.back();
+    for (int i = (int)evts.size() - 1; i >= 0; i--)
+        pushLog(evts[i]);
     // auto-detect card events and show popup
     for (const auto& e : evts) {
         if (e.find("Kesempatan") != std::string::npos ||
@@ -108,16 +124,6 @@ bool GameScreen::currentPlayerIsJailed() const {
     if (!gs) return false;
     Player* p = gs->currentTurnPlayer();
     return p && p->getStatus() == "JAIL";
-}
-
-bool GameScreen::canBuyCurrentTile() const {
-    if (!gs || !hasRolled) return false;
-    Player* p = gs->currentTurnPlayer();
-    if (!p) return false;
-    int idx = p->getCurrTile();
-    if (idx < 0 || idx >= (int)gs->tiles.size()) return false;
-    auto* prop = dynamic_cast<PropertyTile*>(gs->tiles[idx]);
-    return prop && prop->getTileOwner() == nullptr;
 }
 
 bool GameScreen::checkPPH(Player& p) {
@@ -158,15 +164,24 @@ bool GameScreen::checkFestival(Player& p) {
 }
 
 Color GameScreen::getColorGroupColor(const std::string& group) const {
-    if (group == "Brown")       return {101, 67, 33, 255};
-    if (group == "Light Blue")  return {173, 216, 230, 255};
+    // Indonesian config names (underscores replaced with spaces in loadAssets)
+    if (group == "COKLAT")      return {139, 90,  43,  255};
+    if (group == "BIRU MUDA")   return {135, 206, 235, 255};
+    if (group == "MERAH MUDA")  return {255, 105, 180, 255};
+    if (group == "ORANGE")      return {255, 140,  0,  255};
+    if (group == "MERAH")       return {220,  20,  60, 255};
+    if (group == "KUNING")      return {255, 210,   0, 255};
+    if (group == "HIJAU")       return { 34, 139,  34, 255};
+    if (group == "BIRU TUA")    return {  0,   0, 180, 255};
+    // English fallbacks (legacy)
+    if (group == "Brown")       return {139,  90,  43, 255};
+    if (group == "Light Blue")  return {135, 206, 235, 255};
     if (group == "Pink")        return {255, 105, 180, 255};
-    if (group == "Orange")      return {255, 165, 0, 255};
-    if (group == "Red")         return {220, 20, 60, 255};
-    if (group == "Yellow")      return {255, 215, 0, 255};
-    if (group == "Green")       return {34, 139, 34, 255};
-    if (group == "Dark Blue")   return {0, 0, 139, 255};
-    return {128, 128, 128, 255};
+    if (group == "Red")         return {220,  20,  60, 255};
+    if (group == "Yellow")      return {255, 210,   0, 255};
+    if (group == "Green")       return { 34, 139,  34, 255};
+    if (group == "Dark Blue")   return {  0,   0, 180, 255};
+    return {160, 160, 160, 255};
 }
 
 // ─── executeRollResult ────────────────────────────────────────────────────────
@@ -190,8 +205,10 @@ void GameScreen::executeRollResult() {
         if (curJailTurns >= 3) {
             // forced fine + move
             bankruptcy->tryForceJailFine(*p);
+            gs->jail_turns.erase(p);
+            p->setStatus("ACTIVE");
             landing->rollAndMove(*p, true, dice1, dice2);
-            landing->applyGoSalary(*p, jailTile);
+            // rollAndMove already called applyGoSalary internally
             if (checkPPH(*p)) return;
             landing->applyLanding(*p);
             isDouble = false;
@@ -205,11 +222,13 @@ void GameScreen::executeRollResult() {
                 landing->applyGoSalary(*p, jailTile);
                 if (checkPPH(*p)) return;
                 landing->applyLanding(*p);
-                isDouble = false;
+                // escaped with double → preserve bonus roll (standard Monopoly rule)
+                isDouble = jr.isDouble;
+                if (isDouble) consecDoubles++;
             } else {
                 gs->jail_turns[p] = jr.newJailTurns;
-                lastEvent = p->getUsername() + " gagal keluar penjara ("
-                            + std::to_string(jr.newJailTurns) + "/3)";
+                pushLog(p->getUsername() + " gagal keluar penjara ("
+                            + std::to_string(jr.newJailTurns) + "/3)");
                 isDouble = false;
                 drainAndStoreEvents();
                 hasRolled = true;
@@ -219,23 +238,105 @@ void GameScreen::executeRollResult() {
         }
     } else {
         bool dbl = landing->rollAndMove(*p, true, dice1, dice2);
-        landing->applyGoSalary(*p, p->getCurrTile() - dice1 - dice2); // old tile approx
-        if (checkPPH(*p)) return;
-        landing->applyLanding(*p);
-        isDouble = dbl;
-        if (dbl) {
-            consecDoubles++;
-            if (consecDoubles >= 3) {
-                // 3 consecutive doubles → jail
-                landing->sendToJail(*p);
-                isDouble = false;
-                consecDoubles = 0;
+        // rollAndMove already called applyGoSalary internally; avoid double-count
+        // landing->applyGoSalary(*p, p->getCurrTile() - dice1 - dice2);
+
+        int tileIdx = p->getCurrTile();
+        auto* prop = dynamic_cast<PropertyTile*>(gs->tiles[tileIdx]);
+        bool isBuyableProp = prop && prop->getTileOwner() == nullptr;
+
+        // intercept unowned property landing for human players
+        if (isBuyableProp && !currentPlayerIsBot()) {
+            propertyLandingPending = true;
+            propertyLandingTileIdx = tileIdx;
+            propertyLandingDouble  = dbl;
+            if (dbl) {
+                consecDoubles++;
+                if (consecDoubles >= 3) {
+                    landing->sendToJail(*p);
+                    propertyLandingDouble = false;
+                    consecDoubles = 0;
+                    propertyLandingPending = false;
+                    finalizeRoll();
+                    handleEndTurn();
+                    return;
+                }
+            }
+            finalizeRoll();
+            return;
+        }
+
+        if (checkPPH(*p)) {
+            isDouble = dbl;
+            if (dbl) consecDoubles++;
+            return;
+        }
+
+        // ── applyLanding with exception-based debt recovery ───────────────
+        try {
+            landing->applyLanding(*p);
+        } catch (const UnablePayRentException& e) {
+            // Backend threw because player can't afford rent (after discount applied)
+            std::string msg = e.what();
+            // extract amount from message "Sewa M<N>"
+            int rent = 0;
+            auto pos = msg.find('M');
+            if (pos != std::string::npos) rent = std::stoi(msg.substr(pos + 1));
+            debtMode    = true;
+            debtLanding = true;
+            debtAmount  = rent > 0 ? rent : debtAmount;
+            pushLog("Tidak sanggup bayar sewa M" + std::to_string(debtAmount));
+            isDouble = dbl;
+            if (dbl) consecDoubles++;
+            finalizeRoll();
+            return;
+        } catch (const UnablePayPBMTaxException& e) {
+            std::string msg = e.what();
+            int amt = 0;
+            auto pos = msg.find('M');
+            if (pos != std::string::npos) amt = std::stoi(msg.substr(pos + 1));
+            debtMode    = true;
+            debtLanding = true;
+            debtAmount  = amt > 0 ? amt : debtAmount;
+            pushLog("Tidak sanggup bayar pajak PBM M" + std::to_string(debtAmount));
+            isDouble = dbl;
+            if (dbl) consecDoubles++;
+            finalizeRoll();
+            return;
+        } catch (const UnablePayPPHTaxException&) {
+            // PPH should be intercepted by checkPPH() before reaching here;
+            // if we somehow get here, treat as regular tax debt
+            pushLog("Tidak sanggup bayar pajak PPH.");
+            isDouble = dbl;
+            if (dbl) consecDoubles++;
+            finalizeRoll();
+            return;
+        }
+
+        // if player was sent to jail (GO_JAIL tile or card), end turn — no bonus roll
+        if (p->getStatus() == "JAIL") {
+            isDouble      = false;
+            consecDoubles = 0;
+        } else {
+            isDouble = dbl;
+            if (dbl) {
+                consecDoubles++;
+                if (consecDoubles >= 3) {
+                    landing->sendToJail(*p);
+                    isDouble      = false;
+                    consecDoubles = 0;
+                }
             }
         }
     }
 
     finalizeRoll();
     if (gs && !gs->game_over) checkFestival(*p);
+
+    // auto-end turn if player just entered jail (no need to press END)
+    if (gs && !gs->game_over && p->getStatus() == "JAIL") {
+        handleEndTurn();
+    }
 }
 
 // ─── handleEndTurn ───────────────────────────────────────────────────────────
@@ -246,7 +347,7 @@ void GameScreen::handleEndTurn() {
         hasRolled  = false;
         isDouble   = false;
         turnEnded  = false;
-        lastEvent  = "Dadu ganda! Giliran tambahan.";
+        pushLog("Dadu ganda! Giliran tambahan.");
         return;
     }
     consecDoubles = 0;
@@ -256,7 +357,7 @@ void GameScreen::handleEndTurn() {
         hasRolled  = false;
         turnEnded  = false;
         isDouble   = false;
-        lastEvent  = "";
+        // (no log for clean end turn)
     } else {
         gameOverOverlay = true;
     }
@@ -399,11 +500,21 @@ void GameScreen::computeLayout() {
     Color abFg    = {80,40,35,255};
     float col2X   = abBoxX + abtnW + abtnColGap;
 
-    btnBuyProperty.loadAsText("BUY PROPERTY", abBoxX, abtnY,                                    abtnW, abtnH, abBg, abHover, abFg);
     btnAuction.loadAsText(    "AUCTION",       col2X,  abtnY,                                    abtnW, abtnH, abBg, abHover, abFg);
     btnBuildHouse.loadAsText( "BUILD HOUSE",  abBoxX, abtnY+(abtnH+abtnRowGap),                  abtnW, abtnH, abBg, abHover, abFg);
     btnMortgage.loadAsText(   "MORTGAGE",      col2X,  abtnY+(abtnH+abtnRowGap),                  abtnW, abtnH, abBg, abHover, abFg);
     btnRedeem.loadAsText(     "TEBUS",        abBoxX, abtnY+2.0f*(abtnH+abtnRowGap),              abtnW, abtnH, abBg, abHover, abFg);
+
+    // debt recovery buttons — positioned in same area as action buttons
+    float debtW = (abBoxW - abtnColGap) / 2.0f;
+    btnDebtGadai.loadAsText("GADAI",  abBoxX,  abtnY, debtW, abtnH,
+                             {200,140,50,255},{220,160,70,255},WHITE);
+    btnDebtLelang.loadAsText("LELANG", col2X,   abtnY, debtW, abtnH,
+                              {70,120,200,255},{90,140,220,255},WHITE);
+    float forceW = abBoxW;
+    btnDebtForce.loadAsText("LANJUT (TERIMA PAILIT)", abBoxX,
+                             abtnY + abtnH + abtnRowGap, forceW, abtnH,
+                             {180,60,60,255},{200,80,80,255},WHITE);
 
     // auction bid / pass buttons (positioned over the action-buttons area)
     float aucBtnH = abtnH;
@@ -520,8 +631,9 @@ void GameScreen::unloadAssets() {
     UnloadTexture(aktaTexture);
     btnPlay.unload(); btnAssets.unload(); btnPlayers.unload(); btnLog.unload();
     btnRollDice.unload(); btnEndTurn.unload();
-    btnBuyProperty.unload(); btnAuction.unload();
+    btnAuction.unload();
     btnBuildHouse.unload(); btnMortgage.unload(); btnRedeem.unload();
+    btnDebtGadai.unload(); btnDebtLelang.unload(); btnDebtForce.unload();
     btnAuctionBid.unload(); btnAuctionPass.unload();
     btnSaveGame.unload();
     btnSetDice.unload();
@@ -535,9 +647,13 @@ void GameScreen::unloadAssets() {
 // ─── update ───────────────────────────────────────────────────────────────────
 void GameScreen::update(float dt) {
     // blocking overlays: no other interaction allowed
+    // TELEPORT_SELECT intentionally excluded: it needs tile clicks on board
+    bool cardBlocks = (cardMode == CardMode::LASSO_SELECT ||
+                       cardMode == CardMode::DEMOLITION_SELECT);
     bool anyOverlay = showPopup || showSelPopup || gameOverOverlay || setDiceMode
-                      || auctionMode || cardMode != CardMode::NONE || pphPending
-                      || buildMode || festivalPending;
+                      || auctionMode || cardBlocks || pphPending
+                      || buildMode || festivalPending || propertyLandingPending
+                      || saveMode || debtMode;
 
     // tab switching (only when no overlay is blocking)
     if (!anyOverlay) {
@@ -555,7 +671,8 @@ void GameScreen::update(float dt) {
     {
         bool blocked = showPopup || gameOverOverlay || !gs || auctionMode
                        || showSelPopup || cardMode != CardMode::NONE || pphPending
-                       || buildMode || festivalPending;
+                       || buildMode || festivalPending || propertyLandingPending
+                       || setDiceMode || saveMode || debtMode;
         bool isBot   = gs && currentPlayerIsBot();
         bool jailed  = gs && currentPlayerIsJailed();
 
@@ -568,32 +685,33 @@ void GameScreen::update(float dt) {
         // ATUR DADU: only before rolling
         btnSetDice.setDisabled(blocked || isBot || hasRolled || diceRolling);
 
+        // SAVE: disable during overlays for consistency
+        btnSaveGame.setDisabled(blocked);
+
         // action buttons: only after rolling, only for human, only relevant ones
         bool afterRoll = !blocked && !isBot && hasRolled && !diceRolling;
 
-        if (jailed) {
-            // In jail: BUY repurposed as "Bayar Denda" — always usable after roll context
-            btnBuyProperty.setDisabled(!afterRoll);
-            btnAuction.setDisabled(true);
-            btnBuildHouse.setDisabled(true);
-            btnMortgage.setDisabled(true);
-            btnRedeem.setDisabled(true);
-        } else {
-            btnBuyProperty.setDisabled(!afterRoll || !canBuyCurrentTile());
-            btnAuction.setDisabled(!afterRoll);           // always shows "Coming Soon"
-            btnBuildHouse.setDisabled(!afterRoll);
-            btnMortgage.setDisabled(!afterRoll);
-            // TEBUS: check if any owned property is mortgaged
-            bool hasMortgaged = false;
-            if (gs) {
-                Player* cur = gs->currentTurnPlayer();
-                if (cur) {
-                    for (auto* prop : cur->getOwnedProperties()) {
-                        if (prop && prop->isMortgage()) { hasMortgaged = true; break; }
-                    }
+        // GADAI / TEBUS: available anytime during player's turn (before OR after roll)
+        bool myTurn = !blocked && !isBot && !diceRolling;
+        bool hasGadaiable = false, hasMortgaged = false;
+        if (gs) {
+            Player* cur = gs->currentTurnPlayer();
+            if (cur) {
+                for (auto* prop : cur->getOwnedProperties()) {
+                    if (!prop->isMortgage()) hasGadaiable = true;
+                    else                     hasMortgaged = true;
                 }
             }
-            btnRedeem.setDisabled(!afterRoll || !hasMortgaged);
+        }
+        btnMortgage.setDisabled(!myTurn || !hasGadaiable);
+        btnRedeem.setDisabled(!myTurn || !hasMortgaged);
+
+        if (jailed) {
+            btnAuction.setDisabled(true);
+            btnBuildHouse.setDisabled(true);
+        } else {
+            btnAuction.setDisabled(!afterRoll);
+            btnBuildHouse.setDisabled(!afterRoll);
         }
 
         // Dynamic colors for ROLL / END: active = yellow, disabled = cream
@@ -626,13 +744,14 @@ void GameScreen::update(float dt) {
 
     // ESC: cancel card mode / deselect tile / go home
     if (IsKeyPressed(KEY_ESCAPE)) {
+        if (anyOverlay) return; // don't process ESC during popups
         if (cardMode != CardMode::NONE) { cardMode = CardMode::NONE; pendingCardIdx = -1; return; }
         if (selectedTileIdx >= 0)       { selectedTileIdx = -1; return; }
         nextScreen = AppScreen::HOME; shouldChangeScreen = true; return;
     }
 
     // ── tile click: TELEPORT target OR normal selection ───────────────────
-    if (!setDiceMode && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+    if (!anyOverlay && !setDiceMode && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
         Vector2 mouse = GetMousePosition();
         int hitTile = -1;
         for (int i = 0; i < 40; i++) {
@@ -646,26 +765,27 @@ void GameScreen::update(float dt) {
             } else {
                 selectedTileIdx = hitTile;
             }
-        } else if (selectedTileIdx >= 0 && cardMode == CardMode::NONE) {
-            selectedTileIdx = -1;
+        } else {
+            // clicked outside board — cancel TELEPORT if active, else deselect tile
+            if (cardMode == CardMode::TELEPORT_SELECT) {
+                cardMode = CardMode::NONE; pendingCardIdx = -1;
+            } else if (selectedTileIdx >= 0 && cardMode == CardMode::NONE) {
+                selectedTileIdx = -1;
+            }
         }
     }
 
     if (!gs) return;
 
     // ── save game ─────────────────────────────────────────────────────────
-    if (btnSaveGame.isClicked()) {
-        try {
-            gameLoop->saveToFile("save/quicksave.json");
-            lastEvent = "Game tersimpan ke save/quicksave.json";
-        } catch (...) {
-            showPopup = true; popupTitle = "SAVE GAGAL";
-            popupMsg  = "Tidak bisa menyimpan.\nCek folder save/ ada.";
-        }
+    if (!anyOverlay && btnSaveGame.isClicked()) {
+        saveMode = true;
+        saveInputLen = 0;
+        saveInputBuf[0] = '\0';
     }
 
     // ── ATUR DADU popup ───────────────────────────────────────────────────
-    if (btnSetDice.isClicked()) setDiceMode = true;
+    if (!anyOverlay && btnSetDice.isClicked()) setDiceMode = true;
 
     if (setDiceMode) {
         // recompute popup button positions so isClicked() matches draw()
@@ -736,7 +856,7 @@ void GameScreen::update(float dt) {
                 gs->addLog(*p, "BAYAR_PAJAK", "PPH FLAT M" + std::to_string(amt));
                 gs->events.pushEvent(p->getUsername() + " membayar PPH flat M" + std::to_string(amt));
             } else {
-                lastEvent = "Saldo tidak cukup untuk bayar PPH!";
+                pushLog("Saldo tidak cukup untuk bayar PPH!");
             }
             pphPending = false;
             hasRolled = true;
@@ -750,13 +870,65 @@ void GameScreen::update(float dt) {
                 gs->addLog(*p, "BAYAR_PAJAK", "PPH PCT M" + std::to_string(amt));
                 gs->events.pushEvent(p->getUsername() + " membayar PPH " + std::to_string(gs->config.getPphPercentage()) + "% = M" + std::to_string(amt));
             } else {
-                lastEvent = "Saldo tidak cukup untuk bayar PPH!";
+                pushLog("Saldo tidak cukup untuk bayar PPH!");
             }
             pphPending = false;
             hasRolled = true;
             drainAndStoreEvents();
             gameLoop->checkWinGui();
             if (gs->game_over) gameOverOverlay = true;
+        }
+        return;
+    }
+
+    // ── Save popup ────────────────────────────────────────────────────────
+    if (saveMode) {
+        int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
+        float popW = 420.0f * globalScale;
+        float popH = 220.0f * globalScale;
+        float popX = (sw2 - popW) / 2.0f;
+        float popY = (sh2 - popH) / 2.0f;
+
+        float btnW2 = (popW - 30.0f * globalScale) / 2.0f;
+        float btnH2 = 36.0f * globalScale;
+        float btnY2 = popY + popH - btnH2 - 20.0f * globalScale;
+
+        btnSaveConfirm.loadAsText("SIMPAN", popX + 10.0f * globalScale, btnY2, btnW2, btnH2,
+                                  {70,140,80,255},{90,170,100,255},WHITE);
+        btnSaveCancel.loadAsText("BATAL", popX + 20.0f * globalScale + btnW2, btnY2, btnW2, btnH2,
+                                 {120,50,45,255},{160,70,65,255},WHITE);
+
+        // text input
+        int key = GetCharPressed();
+        while (key > 0) {
+            if (key >= 32 && key <= 126 && saveInputLen < 50) {
+                saveInputBuf[saveInputLen++] = (char)key;
+                saveInputBuf[saveInputLen] = '\0';
+            }
+            key = GetCharPressed();
+        }
+        if (IsKeyPressed(KEY_BACKSPACE) && saveInputLen > 0)
+            saveInputBuf[--saveInputLen] = '\0';
+
+        if (btnSaveConfirm.isClicked() && saveInputLen > 0) {
+            std::string fname = std::string("save/") + saveInputBuf;
+            try {
+                gameLoop->saveToFile(fname);
+                pushLog("Game tersimpan ke " + fname);
+            } catch (const std::exception& e) {
+                showPopup = true; popupTitle = "SAVE GAGAL";
+                popupMsg  = std::string("Tidak bisa menyimpan:\n") + e.what();
+            }
+            saveMode = false;
+            saveInputLen = 0;
+            saveInputBuf[0] = '\0';
+            return;
+        }
+        if (btnSaveCancel.isClicked()) {
+            saveMode = false;
+            saveInputLen = 0;
+            saveInputBuf[0] = '\0';
+            return;
         }
         return;
     }
@@ -774,6 +946,10 @@ void GameScreen::update(float dt) {
         float cancelW = 80.0f * globalScale;
         float cancelH = 28.0f * globalScale;
 
+        float listStartY = popY + 70.0f * globalScale;
+        float listEndY   = popY + popH - cancelH - 16.0f * globalScale;
+        float visibleH   = listEndY - listStartY;
+
         btnFestivalCancel.loadAsText("BATAL", popX + popW - cancelW - 10.0f * globalScale,
                                      popY + popH - cancelH - 10.0f * globalScale,
                                      cancelW, cancelH,
@@ -782,6 +958,7 @@ void GameScreen::update(float dt) {
             festivalPending = false;
             festivalProps.clear();
             btnFestivalProps.clear();
+            festivalScroll = 0.0f;
             return;
         }
 
@@ -794,13 +971,32 @@ void GameScreen::update(float dt) {
                 std::snprintf(buf, sizeof(buf), "%s (%s) Sewa: M%d",
                               prop->getTileName().c_str(), prop->getTileCode().c_str(), rent);
                 Button b;
-                b.loadAsText(buf, popX + 20.0f * globalScale,
-                             popY + 50.0f * globalScale + i * (rowH + 4.0f),
-                             btnW2, rowH,
-                             {244,206,43,255},{250,220,70,255},{80,40,35,255});
+                b.loadAsText(buf, 0.0f, 0.0f, btnW2, rowH,
+                             {148,73,68,255},{170,85,78,255},WHITE);
                 btnFestivalProps.push_back(b);
             }
         }
+
+        // scroll handling
+        float contentH = (float)btnFestivalProps.size() * (rowH + 4.0f);
+        if (contentH > visibleH) {
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0.0f) {
+                festivalScroll -= wheel * 60.0f * globalScale;
+                festivalScroll = std::max(0.0f, std::min(festivalScroll, contentH - visibleH));
+            }
+        } else {
+            festivalScroll = 0.0f;
+        }
+
+        // update positions & visibility
+        for (int i = 0; i < (int)btnFestivalProps.size(); i++) {
+            float itemY = listStartY + i * (rowH + 4.0f) - festivalScroll;
+            btnFestivalProps[i].setPosition(popX + 20.0f * globalScale, itemY);
+            bool visible = (itemY + rowH > listStartY) && (itemY < listEndY);
+            btnFestivalProps[i].setDisabled(!visible);
+        }
+
         for (int i = 0; i < (int)btnFestivalProps.size(); i++) {
             if (btnFestivalProps[i].isClicked()) {
                 auto* prop = festivalProps[i];
@@ -810,8 +1006,65 @@ void GameScreen::update(float dt) {
                 festivalPending = false;
                 festivalProps.clear();
                 btnFestivalProps.clear();
+                festivalScroll = 0.0f;
                 break;
             }
+        }
+        return;
+    }
+
+    // ── Property landing popup (BUY / AUCTION) ────────────────────────────
+    if (propertyLandingPending) {
+        int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
+
+        float gap = 20.0f * globalScale;
+        float aktaScale = 0.42f * globalScale;        // same scale for both sides
+        float aktaW = aktaTexture.width  * aktaScale;
+        float aktaH = aktaTexture.height * aktaScale;
+        float rightW = aktaW;
+        float rightH = aktaH;
+        float totalW = aktaW + gap + rightW;
+        float popX = (sw2 - totalW) / 2.0f;
+        float popY = (sh2 - aktaH) / 2.0f;
+        float rightX = popX + aktaW + gap;
+        float rightY = popY;
+
+        float btnMargin = 40.0f * globalScale;
+        float btnGap    = 8.0f * globalScale;
+        float btnW2     = (rightW - 2*btnMargin - btnGap) / 2.0f;
+        float btnH2     = 28.0f * globalScale;
+        float btnY2     = rightY + rightH - btnH2 - btnMargin;
+
+        auto* prop = dynamic_cast<PropertyTile*>(gs->tiles[propertyLandingTileIdx]);
+        if (!prop) { propertyLandingPending = false; return; }
+
+        btnPropBuy.loadAsText("BELI", rightX + btnMargin, btnY2, btnW2, btnH2,
+                              {70,140,80,255},{90,170,100,255},WHITE);
+        btnPropAuction.loadAsText("LELANG", rightX + btnMargin + btnW2 + btnGap, btnY2, btnW2, btnH2,
+                                  {244,206,43,255},{250,220,70,255},{80,40,35,255});
+
+        Player* p = gs->currentTurnPlayer();
+        if (btnPropBuy.isClicked()) {
+            if (!BuyManager::buy(*p, *prop)) {
+                showPopup = true; popupTitle = "BELI";
+                popupMsg  = "Tidak bisa membeli\ntile ini.";
+            } else {
+                gs->addLog(*p, "BELI", prop->getTileCode());
+                drainAndStoreEvents();
+                pushLog(p->getUsername() + " membeli " + prop->getTileName()
+                        + " (M" + std::to_string(prop->getBuyPrice()) + ")");
+            }
+            isDouble = propertyLandingDouble;
+            propertyLandingPending = false;
+            propertyLandingTileIdx = -1;
+            return;
+        }
+        if (btnPropAuction.isClicked()) {
+            startAuction();
+            isDouble = propertyLandingDouble;
+            propertyLandingPending = false;
+            propertyLandingTileIdx = -1;
+            return;
         }
         return;
     }
@@ -846,7 +1099,7 @@ void GameScreen::update(float dt) {
                                  popX + 20.0f * globalScale,
                                  popY + 50.0f * globalScale + i * (rowH + 4.0f),
                                  btnW2, rowH,
-                                 {244,206,43,255},{250,220,70,255},{80,40,35,255});
+                                 {148,73,68,255},{170,85,78,255},WHITE);
                     btnBuildGroups.push_back(b);
                 }
             }
@@ -868,7 +1121,7 @@ void GameScreen::update(float dt) {
                                      popX + 20.0f * globalScale,
                                      popY + 50.0f * globalScale + j * (rowH + 4.0f),
                                      btnW2, rowH,
-                                     {244,206,43,255},{250,220,70,255},{80,40,35,255});
+                                     {148,73,68,255},{170,85,78,255},WHITE);
                         btnBuildProps.push_back(b);
                     }
                     break;
@@ -887,6 +1140,10 @@ void GameScreen::update(float dt) {
                             PropertyManager::build(*gs->currentTurnPlayer(), *buildSelectedProp);
                             gs->addLog(*gs->currentTurnPlayer(), "BANGUN", buildSelectedProp->getTileCode());
                             drainAndStoreEvents();
+                            int newLvl = buildSelectedProp->getLevel();
+                            std::string bldLabel = (newLvl == 5) ? "Hotel" : std::to_string(newLvl) + " Rumah";
+                            pushLog(gs->currentTurnPlayer()->getUsername() + " bangun "
+                                    + bldLabel + " di " + buildSelectedProp->getTileName());
                         } catch (const UnablePayBuildException&) {
                             showPopup = true; popupTitle = "BUILD"; popupMsg = "Saldo tidak cukup!";
                         }
@@ -901,14 +1158,21 @@ void GameScreen::update(float dt) {
             float confX = popX + (popW - confW) / 2.0f;
             float confY = popY + popH - confH - 50.0f * globalScale;
             btnBuildConfirm.loadAsText("UPGRADE HOTEL", confX, confY, confW, confH,
-                                       {244,206,43,255},{250,220,70,255},{80,40,35,255});
+                                       {148,73,68,255},{170,85,78,255},WHITE);
             if (btnBuildConfirm.isClicked()) {
-                try {
-                    PropertyManager::build(*gs->currentTurnPlayer(), *buildSelectedProp);
-                    gs->addLog(*gs->currentTurnPlayer(), "BANGUN", buildSelectedProp->getTileCode());
-                    drainAndStoreEvents();
-                } catch (const UnablePayBuildException&) {
-                    showPopup = true; popupTitle = "BUILD"; popupMsg = "Saldo tidak cukup!";
+                Player* bldP = gs->currentTurnPlayer();  // cache before state changes
+                if (bldP && buildSelectedProp) {
+                    try {
+                        PropertyManager::build(*bldP, *buildSelectedProp);
+                        int newLvl = buildSelectedProp->getLevel();
+                        std::string bldLabel = (newLvl == 5) ? "Hotel" : std::to_string(newLvl) + " Rumah";
+                        gs->addLog(*bldP, "BANGUN", buildSelectedProp->getTileCode());
+                        drainAndStoreEvents();
+                        pushLog(bldP->getUsername() + " bangun " + bldLabel
+                                + " di " + buildSelectedProp->getTileName());
+                    } catch (const UnablePayBuildException&) {
+                        showPopup = true; popupTitle = "BUILD"; popupMsg = "Saldo tidak cukup!";
+                    }
                 }
                 buildMode = false; buildStep = 0; buildSelectedProp = nullptr;
             }
@@ -918,6 +1182,56 @@ void GameScreen::update(float dt) {
 
     // ── selection popup (LASSO / DEMOLITION) ─────────────────────────────
     if (showSelPopup) { updateSelPopup(); return; }
+
+    // ── debt recovery mode ────────────────────────────────────────────────
+    if (debtMode && gs) {
+        Player* p = gs->currentTurnPlayer();
+
+        // Safety: no valid current player → exit debt mode
+        if (!p) { debtMode = false; debtLanding = false; return; }
+
+        // Auto-resolve if player now can afford
+        if (p->getBalance() >= debtAmount) {
+            debtMode = false;
+            if (debtLanding) {
+                debtLanding = false;
+                try {
+                    landing->applyLanding(*p);
+                } catch (const GeneralException& e) {
+                    // Still can't pay for some reason (race condition/edge case)
+                    pushLog(std::string("Error: ") + e.what());
+                }
+                drainAndStoreEvents();
+                gameLoop->checkWinGui();
+                if (gs->game_over) gameOverOverlay = true;
+                else checkFestival(*p);
+            }
+            return;
+        }
+
+        // GADAI → open gadai popup (stays in debtMode after)
+        if (btnDebtGadai.isClicked()) {
+            openGadaiPopup();
+            return;
+        }
+        // LELANG → open auction
+        if (btnDebtLelang.isClicked()) {
+            startAuction();
+            return;
+        }
+        // Force proceed (declare bankruptcy via backend)
+        if (btnDebtForce.isClicked()) {
+            debtMode    = false;
+            debtLanding = false;
+            if (p) {
+                landing->applyLanding(*p);  // backend will bankrupt automatically
+                drainAndStoreEvents();
+                gameLoop->checkWinGui();
+                if (gs->game_over) gameOverOverlay = true;
+            }
+        }
+        return;
+    }
 
     // ── auto-play bot turn ────────────────────────────────────────────────
     if (currentPlayerIsBot() && !hasRolled) {
@@ -967,68 +1281,37 @@ void GameScreen::update(float dt) {
         diceRollInterval = 0.06f;
     }
 
+    // ── GADAI / TEBUS — accessible before OR after roll ──────────────────
+    if (!currentPlayerIsBot() && activeTab == 0) {
+        if (btnMortgage.isClicked()) openGadaiPopup();
+        if (btnRedeem.isClicked())   openTebusPopup();
+    }
+
     // ── action buttons (PLAY tab) ─────────────────────────────────────────
-    if (hasRolled && activeTab == 0) {
+    if (hasRolled && activeTab == 0 && !currentPlayerIsJailed()) {
         Player* p = gs->currentTurnPlayer();
 
-        if (currentPlayerIsJailed()) {
-            if (btnBuyProperty.isClicked()) {
-                bankruptcy->cmdBayarDenda(*p);
-                drainAndStoreEvents();
-            }
-        } else {
-            if (btnBuyProperty.isClicked() && canBuyCurrentTile()) {
-                BuyManager::buy(*p, *gs->tiles[p->getCurrTile()]);
-                drainAndStoreEvents();
-            }
+        if (btnAuction.isClicked()) startAuction();
 
-            if (btnAuction.isClicked()) startAuction();
-
-            if (btnBuildHouse.isClicked()) {
-                auto options = PropertyManager::getBuildableOptions(*p, gs->board);
-                if (options.empty()) {
-                    showPopup = true; popupTitle = "BUILD";
-                    popupMsg  = "Tidak ada properti yang\nbisa dibangun saat ini.";
-                } else {
-                    buildMode = true;
-                    buildStep = 0;
-                    buildGroupProps.clear();
-                    buildGroupNames.clear();
-                    btnBuildGroups.clear();
-                    btnBuildProps.clear();
-                    buildSelectedProp = nullptr;
-                    for (auto& [grp, opts] : options) {
-                        buildGroupNames.push_back(grp);
-                        buildGroupProps[grp].clear();
-                        for (auto& opt : opts) {
-                            buildGroupProps[grp].push_back(opt.prop);
-                        }
+        if (btnBuildHouse.isClicked()) {
+            auto options = PropertyManager::getBuildableOptions(*p, gs->board);
+            if (options.empty()) {
+                showPopup = true; popupTitle = "BUILD";
+                popupMsg  = "Tidak ada properti yang\nbisa dibangun saat ini.";
+            } else {
+                buildMode = true;
+                buildStep = 0;
+                buildGroupProps.clear();
+                buildGroupNames.clear();
+                btnBuildGroups.clear();
+                btnBuildProps.clear();
+                buildSelectedProp = nullptr;
+                for (auto& [grp, opts] : options) {
+                    buildGroupNames.push_back(grp);
+                    buildGroupProps[grp].clear();
+                    for (auto& opt : opts) {
+                        buildGroupProps[grp].push_back(opt.prop);
                     }
-                }
-            }
-
-            if (btnMortgage.isClicked()) {
-                int idx = (selectedTileIdx >= 0) ? selectedTileIdx : p->getCurrTile();
-                auto* prop = (idx >= 0 && idx < (int)gs->tiles.size())
-                             ? dynamic_cast<PropertyTile*>(gs->tiles[idx]) : nullptr;
-                if (prop && prop->getTileOwner() == p) {
-                    if (!PropertyManager::mortgage(*p, *prop)) {
-                        showPopup = true; popupTitle = "MORTGAGE";
-                        popupMsg  = "Tidak bisa menggadai\ntile ini.";
-                    } else drainAndStoreEvents();
-                }
-            }
-
-            if (btnRedeem.isClicked()) {
-                int idx = (selectedTileIdx >= 0) ? selectedTileIdx : p->getCurrTile();
-                auto* prop = (idx >= 0 && idx < (int)gs->tiles.size())
-                             ? dynamic_cast<PropertyTile*>(gs->tiles[idx]) : nullptr;
-                if (prop && prop->getTileOwner() == p && prop->isMortgage()) {
-                    bankruptcy->cmdTebus(*p, prop->getTileCode());
-                    drainAndStoreEvents();
-                } else {
-                    showPopup = true; popupTitle = "TEBUS";
-                    popupMsg  = "Pilih properti milik Anda\nyang sedang digadaikan.";
                 }
             }
         }
@@ -1072,6 +1355,69 @@ void GameScreen::draw() {
     // board
     DrawTextureEx(boardTexture, {boardX, boardY}, 0.0f, boardScale, WHITE);
 
+    // ── houses & hotels on board ──────────────────────────────────────────
+    if (gs) {
+        float houseSz = 14.0f * globalScale;
+        float hotelSz = 18.0f * globalScale;
+        float houseGap = 0.125f * globalScale;
+        for (int i = 0; i < 40; i++) {
+            auto* prop = dynamic_cast<PropertyTile*>(gs->tiles[i]);
+            if (!prop || prop->getTileType() != "STREET") continue;
+            int lvl = prop->getLevel();
+            if (lvl <= 0) continue;
+
+            int row, col;
+            getGridRC(i, row, col);
+            Rectangle tb = tileBounds[i];
+
+            if (lvl >= 5) {
+                // Hotel
+                float sc = hotelSz / (float)hotelTexture.width;
+                float hw = hotelTexture.width * sc;
+                float hh = hotelTexture.height * sc;
+                float hx = tb.x + tb.width / 2.0f - hw / 2.0f;
+                float hy = tb.y + tb.height / 2.0f - hh / 2.0f;
+                if (row == 10) { // bottom row, strip at top
+                    hy = tb.y + tb.height * 0.06f - hh / 2.0f;
+                } else if (row == 0) { // top row, strip at bottom
+                    hy = tb.y + tb.height * 0.94f - hh / 2.0f;
+                } else if (col == 0) { // left col, strip at right
+                    hx = tb.x + tb.width * 0.94f - hw / 2.0f;
+                } else if (col == 10) { // right col, strip at left
+                    hx = tb.x + tb.width * 0.06f - hw / 2.0f;
+                }
+                DrawTextureEx(hotelTexture, {hx, hy}, 0.0f, sc, WHITE);
+            } else {
+                // Houses (1-4)
+                float sc = houseSz / (float)houseTexture.width;
+                float hw = houseTexture.width * sc;
+                float hh = houseTexture.height * sc;
+                float totalLen = lvl * hw + (lvl - 1) * houseGap;
+                for (int h = 0; h < lvl; h++) {
+                    float hx, hy;
+                    if (row == 10) { // bottom row, strip at top, horizontal
+                        float startX = tb.x + (tb.width - totalLen) / 2.0f;
+                        hx = startX + h * (hw + houseGap);
+                        hy = tb.y + tb.height * 0.06f - hh / 2.0f;
+                    } else if (row == 0) { // top row, strip at bottom, horizontal
+                        float startX = tb.x + (tb.width - totalLen) / 2.0f;
+                        hx = startX + h * (hw + houseGap);
+                        hy = tb.y + tb.height * 0.94f - hh / 2.0f;
+                    } else if (col == 0) { // left col, strip at right, vertical
+                        float startY = tb.y + (tb.height - totalLen) / 2.0f;
+                        hx = tb.x + tb.width * 0.94f - hw / 2.0f;
+                        hy = startY + h * (hw + houseGap);
+                    } else { // right col, strip at left, vertical
+                        float startY = tb.y + (tb.height - totalLen) / 2.0f;
+                        hx = tb.x + tb.width * 0.06f - hw / 2.0f;
+                        hy = startY + h * (hw + houseGap);
+                    }
+                    DrawTextureEx(houseTexture, {hx, hy}, 0.0f, sc, WHITE);
+                }
+            }
+        }
+    }
+
     // ── player icons on board ─────────────────────────────────────────────
     int numPlayers = gs ? (int)gs->players.size() : 0;
     // draw no-background icons on board — forced to uniform size
@@ -1110,6 +1456,30 @@ void GameScreen::draw() {
                             -90.0f, WHITE);
         } else {
             DrawTextureEx(playerIconsNb[i % 4], {dx, dy}, 0.0f, sc, WHITE);
+        }
+    }
+
+    // ── festival multiplier marks on tiles ───────────────────────────────
+    if (gs) {
+        int festSz = std::max(8, (int)(11 * globalScale));
+        for (int i = 0; i < (int)gs->tiles.size() && i < 40; i++) {
+            auto* prop = dynamic_cast<PropertyTile*>(gs->tiles[i]);
+            if (!prop || prop->getFestivalDuration() <= 0 || prop->getFestivalMultiplier() <= 1)
+                continue;
+
+            char mark[8];
+            std::snprintf(mark, sizeof(mark), "x%d", prop->getFestivalMultiplier());
+            int mw = MeasureText(mark, festSz);
+
+            float cx2 = tileCenters[i][0];
+            float cy2 = tileCenters[i][1];
+
+            // small pill background
+            float padX = 3.0f, padY = 2.0f;
+            DrawRectangleRounded({cx2 - mw/2.0f - padX, cy2 - festSz/2.0f - padY,
+                                   (float)mw + 2*padX, (float)festSz + 2*padY},
+                                  0.4f, 4, {220, 80, 20, 200});
+            DrawText(mark, (int)(cx2 - mw/2.0f), (int)(cy2 - festSz/2.0f), festSz, WHITE);
         }
     }
 
@@ -1284,14 +1654,14 @@ void GameScreen::draw() {
         float bh2 = boardTexture.height * boardScale;
         DrawRectangle((int)boardX, (int)boardY, (int)bw2, (int)bh2, {0,0,200,40});
         int hSz = (int)(14 * globalScale);
-        const char* h = "Klik tile tujuan teleport (ESC batal)";
+        const char* h = "Klik tile tujuan teleport";
         int hw2 = MeasureText(h, hSz);
         DrawText(h, (int)(boardX + (bw2 - hw2) / 2.0f),
                  (int)(boardY + bh2 - 24.0f * globalScale), hSz, WHITE);
     }
 
     // tile overlay
-    if (selectedTileIdx >= 0 && cardMode == CardMode::NONE) drawTileOverlay();
+    if (selectedTileIdx >= 0) drawTileOverlay();
 
     // popup
     if (showPopup) drawPopup();
@@ -1324,6 +1694,49 @@ void GameScreen::draw() {
 
         btnPphFlat.draw();
         btnPphPct.draw();
+    }
+
+    // save popup
+    if (saveMode) {
+        int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
+        DrawRectangle(0, 0, sw2, sh2, {0,0,0,180});
+
+        float popW = 420.0f * globalScale;
+        float popH = 220.0f * globalScale;
+        float popX = (sw2 - popW) / 2.0f;
+        float popY = (sh2 - popH) / 2.0f;
+
+        DrawRectangleRounded({popX, popY, popW, popH}, 0.12f, 8, {255,243,210,255});
+        DrawRectangleRoundedLines({popX, popY, popW, popH}, 0.12f, 8, {80,40,35,255});
+
+        int titleSz = (int)(20 * globalScale);
+        int tw2 = MeasureText("SIMPAN GAME", titleSz);
+        DrawText("SIMPAN GAME", (int)(popX + (popW - tw2)/2.0f), (int)(popY + 18.0f*globalScale), titleSz, {148,73,68,255});
+
+        int subSz = (int)(14 * globalScale);
+        const char* msg = "Nama file:";
+        int mw = MeasureText(msg, subSz);
+        DrawText(msg, (int)(popX + (popW - mw)/2.0f), (int)(popY + 55.0f*globalScale), subSz, BLACK);
+
+        // text input box
+        float inpW = popW - 40.0f * globalScale;
+        float inpH = 34.0f * globalScale;
+        float inpX = popX + 20.0f * globalScale;
+        float inpY = popY + 85.0f * globalScale;
+        DrawRectangleRec({inpX, inpY, inpW, inpH}, {255,255,255,255});
+        DrawRectangleLinesEx({inpX, inpY, inpW, inpH}, 1.5f, {80,40,35,255});
+
+        int txtSz = (int)(16 * globalScale);
+        DrawText(saveInputBuf, (int)(inpX + 8.0f*globalScale), (int)(inpY + (inpH - txtSz)/2.0f), txtSz, BLACK);
+
+        // cursor blink
+        if ((int)(GetTime() * 2) % 2 == 0) {
+            int cursorX = (int)(inpX + 8.0f*globalScale + MeasureText(saveInputBuf, txtSz) + 2);
+            DrawLine(cursorX, (int)(inpY + 6.0f*globalScale), cursorX, (int)(inpY + inpH - 6.0f*globalScale), BLACK);
+        }
+
+        btnSaveConfirm.draw();
+        btnSaveCancel.draw();
     }
 
     // build popup
@@ -1388,8 +1801,175 @@ void GameScreen::draw() {
         int subSz = (int)(13 * globalScale);
         const char* msg = "Pilih properti untuk festival:";
         DrawText(msg, (int)(popX + 20.0f*globalScale), (int)(popY + 46.0f*globalScale), subSz, BLACK);
+
+        // scissor for scrollable list
+        float rowH = 30.0f * globalScale;
+        float cancelH = 28.0f * globalScale;
+        float listStartY = popY + 70.0f * globalScale;
+        float listEndY   = popY + popH - cancelH - 16.0f * globalScale;
+        float visibleH   = listEndY - listStartY;
+        float contentH   = (float)btnFestivalProps.size() * (rowH + 4.0f);
+        float listW      = popW - 40.0f * globalScale;
+
+        BeginScissorMode((int)(popX + 18.0f*globalScale), (int)listStartY,
+                         (int)(popW - 36.0f*globalScale), (int)visibleH);
         for (auto& b : btnFestivalProps) b.draw();
+        EndScissorMode();
+
+        // scrollbar
+        if (contentH > visibleH) {
+            float sbX      = popX + popW - 24.0f * globalScale;
+            float sbY      = listStartY;
+            float sbW      = 6.0f * globalScale;
+            float sbH      = visibleH;
+            float thumbH   = (visibleH / contentH) * sbH;
+            float thumbY   = sbY + (festivalScroll / contentH) * sbH;
+            DrawRectangleRec({sbX, sbY, sbW, sbH}, {200, 190, 180, 120});
+            DrawRectangleRec({sbX, thumbY, sbW, thumbH}, {148, 73, 68, 200});
+        }
+
         btnFestivalCancel.draw();
+    }
+
+    // property landing popup (split: left=akta, right=akta bg+info+buttons)
+    if (propertyLandingPending) {
+        int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
+        DrawRectangle(0, 0, sw2, sh2, {0,0,0,180});
+
+        float gap = 20.0f * globalScale;
+        float aktaScale = 0.42f * globalScale;        // same scale for both sides
+        float aktaW = aktaTexture.width  * aktaScale;
+        float aktaH = aktaTexture.height * aktaScale;
+        float rightW = aktaW;
+        float rightH = aktaH;
+        float totalW = aktaW + gap + rightW;
+        float popX = (sw2 - totalW) / 2.0f;
+        float popY = (sh2 - aktaH) / 2.0f;
+        float rightX = popX + aktaW + gap;
+        float rightY = popY;
+
+        const TileInfo& info = tileData[propertyLandingTileIdx];
+
+        // ── Left: Akta card ──
+        DrawTextureEx(aktaTexture, {popX, popY}, 0.0f, aktaScale, WHITE);
+
+        int nameSz = (int)(aktaH * 0.055f);
+        int nameW  = MeasureText(info.name.c_str(), nameSz);
+        DrawText(info.name.c_str(), (int)(popX + (aktaW - nameW) / 2.0f),
+                 (int)(popY + aktaH * 0.04f), nameSz, BLACK);
+
+        int typeSz = (int)(aktaH * 0.030f);
+        int typeW  = MeasureText(info.type.c_str(), typeSz);
+        DrawText(info.type.c_str(), (int)(popX + (aktaW - typeW) / 2.0f),
+                 (int)(popY + aktaH * 0.13f), typeSz, {148,73,68,255});
+
+        float lx = popX + aktaW * 0.08f;
+        float rx = popX + aktaW * 0.92f;
+        float ry = popY + aktaH * 0.25f;
+        float rH = aktaH * 0.052f;
+        int   rSz = (int)(aktaH * 0.038f);
+        Color lC = {80,50,40,255}, vC = {30,20,15,255}, sC = {148,73,68,255};
+
+        char buf[64];
+        auto drawRow = [&](const char* label, const char* value) {
+            DrawText(label, (int)lx, (int)ry, rSz, lC);
+            int vw = MeasureText(value, rSz);
+            DrawText(value, (int)(rx - vw), (int)ry, rSz, vC);
+            ry += rH;
+        };
+        auto drawDivider = [&]() {
+            ry += rH * 0.1f;
+            DrawLineEx({lx, ry}, {rx, ry}, 0.8f, {160,100,80,120});
+            ry += rH * 0.4f;
+        };
+        auto drawSection = [&](const char* title) {
+            DrawText(title, (int)lx, (int)ry, (int)(aktaH * 0.033f), sC);
+            ry += rH * 0.75f;
+        };
+
+        if (info.type == "STREET") {
+            std::snprintf(buf, sizeof(buf), "Rp %d", info.buyPrice);
+            drawRow("Harga Beli",  buf);
+            std::snprintf(buf, sizeof(buf), "Rp %d", info.mortgageValue);
+            drawRow("Nilai Gadai", buf);
+            drawDivider(); drawSection("SEWA");
+            const char* rentLabels[6] = {"Lahan","1 Rumah","2 Rumah","3 Rumah","4 Rumah","Hotel"};
+            for (int r = 0; r < 6; r++) {
+                std::snprintf(buf, sizeof(buf), "Rp %d", info.rent[r]);
+                drawRow(rentLabels[r], buf);
+            }
+            drawDivider(); drawSection("BIAYA PEMBANGUNAN");
+            std::snprintf(buf, sizeof(buf), "Rp %d", info.houseCost);
+            drawRow("Rumah", buf);
+            std::snprintf(buf, sizeof(buf), "Rp %d", info.hotelCost);
+            drawRow("Hotel", buf);
+        } else if (info.type == "RAILROAD") {
+            std::snprintf(buf, sizeof(buf), "Rp %d", info.mortgageValue);
+            drawRow("Nilai Gadai", buf);
+            drawRow("Cara Beli", "Gratis (mendarat)");
+            drawDivider(); drawSection("SEWA");
+            const int railRent[4] = {25,50,100,200};
+            const char* railLabels[4] = {"1 Stasiun","2 Stasiun","3 Stasiun","4 Stasiun"};
+            for (int r = 0; r < 4; r++) {
+                std::snprintf(buf, sizeof(buf), "Rp %d", railRent[r]);
+                drawRow(railLabels[r], buf);
+            }
+        } else if (info.type == "UTILITY") {
+            std::snprintf(buf, sizeof(buf), "Rp %d", info.mortgageValue);
+            drawRow("Nilai Gadai", buf);
+            drawRow("Cara Beli", "Gratis (mendarat)");
+            drawDivider(); drawSection("SEWA");
+            drawRow("1 Utilitas", "Dadu x 4");
+            drawRow("2 Utilitas", "Dadu x 10");
+        }
+
+        // ── Right: Akta background + info + buttons ──
+        DrawTextureEx(aktaTexture, {rightX, rightY}, 0.0f, aktaScale, WHITE);
+
+        auto* prop = dynamic_cast<PropertyTile*>(gs->tiles[propertyLandingTileIdx]);
+        if (prop) {
+            float cx = rightX + rightW / 2.0f;
+
+            int titleSz = (int)(26 * globalScale);
+            int tW = MeasureText(prop->getTileName().c_str(), titleSz);
+            DrawText(prop->getTileName().c_str(), (int)(cx - tW / 2.0f),
+                     (int)(rightY + rightH * 0.06f), titleSz, {148,73,68,255});
+
+            int subSz = (int)(16 * globalScale);
+            const char* typeStr = (info.type == "STREET") ? "Properti Jalan"
+                                  : (info.type == "RAILROAD") ? "Stasiun Kereta"
+                                  : (info.type == "UTILITY") ? "Utilitas" : "Properti";
+            int typeW2 = MeasureText(typeStr, subSz);
+            DrawText(typeStr, (int)(cx - typeW2 / 2.0f),
+                     (int)(rightY + rightH * 0.14f), subSz, {80,40,35,255});
+
+            // Pesan pembelian
+            int msgSz = (int)(15 * globalScale);
+            const char* line1 = "Anda mendarat di petak ini.";
+            int l1w = MeasureText(line1, msgSz);
+            DrawText(line1, (int)(cx - l1w / 2.0f),
+                     (int)(rightY + rightH * 0.26f), msgSz, BLACK);
+
+            char priceBuf[128];
+            std::snprintf(priceBuf, sizeof(priceBuf), "Apakah Anda ingin membeli");
+            int l2w = MeasureText(priceBuf, msgSz);
+            DrawText(priceBuf, (int)(cx - l2w / 2.0f),
+                     (int)(rightY + rightH * 0.33f), msgSz, BLACK);
+
+            std::snprintf(priceBuf, sizeof(priceBuf), "dengan harga M%d?", prop->getBuyPrice());
+            int l3w = MeasureText(priceBuf, msgSz);
+            DrawText(priceBuf, (int)(cx - l3w / 2.0f),
+                     (int)(rightY + rightH * 0.40f), msgSz, BLACK);
+
+            const char* line4 = "Atau melelangnya?";
+            int l4w = MeasureText(line4, msgSz);
+            DrawText(line4, (int)(cx - l4w / 2.0f),
+                     (int)(rightY + rightH * 0.48f), msgSz, {120,80,75,255});
+
+            // Buttons at bottom
+            btnPropBuy.draw();
+            btnPropAuction.draw();
+        }
     }
 
     // game over
@@ -1411,52 +1991,39 @@ void GameScreen::drawPlayTab(float cardX, float cardScale) {
     int subSz   = (int)(12 * globalScale);
 
     float textX = boxX + 8*globalScale;
-    float textY = boxY + 8*globalScale;
-    if (diceRolling) {
-        DrawText("ROLLING...", (int)textX, (int)textY, titleSz, BLACK);
-    } else if (hasRolled) {
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%d + %d = %d", dice1, dice2, dice1 + dice2);
-        DrawText("DICE RESULT", (int)textX, (int)textY, titleSz, BLACK);
-        textY += titleSz + 4*globalScale;
-        DrawText(buf, (int)textX, (int)textY, subSz, {80,40,35,255});
-        textY += subSz + 4*globalScale;
+    float textY = boxY + 6*globalScale;
 
-        // multi-line lastEvent with simple word-wrap
-        if (!lastEvent.empty()) {
-            int maxLineW = (int)(boxW - 16*globalScale);
-            std::string remaining = lastEvent;
-            while (!remaining.empty() && textY < boxY + boxH - subSz) {
-                // binary search for max chars that fit
-                int low = 1, high = (int)remaining.size(), best = 0;
-                while (low <= high) {
-                    int mid = (low + high) / 2;
-                    if (MeasureText(remaining.substr(0, mid).c_str(), subSz) <= maxLineW) {
-                        best = mid; low = mid + 1;
-                    } else {
-                        high = mid - 1;
-                    }
-                }
-                // break at space if possible
-                int breakAt = best;
-                if (breakAt < (int)remaining.size()) {
-                    size_t spacePos = remaining.rfind(' ', breakAt);
-                    if (spacePos != std::string::npos && spacePos > 0) breakAt = (int)spacePos;
-                }
-                std::string line = remaining.substr(0, breakAt);
-                DrawText(line.c_str(), (int)textX, (int)textY, subSz, {80,40,35,255});
-                textY += subSz + 2*globalScale;
-                // advance remaining
-                while (breakAt < (int)remaining.size() && remaining[breakAt] == ' ') breakAt++;
-                remaining = remaining.substr(breakAt);
-            }
-        }
+    // ── header line: dice result or status hint ───────────────────────────
+    if (diceRolling) {
+        DrawText("ROLLING...", (int)textX, (int)textY, titleSz, {148,73,68,255});
+        textY += titleSz + 4*globalScale;
+    } else if (hasRolled) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "Dadu: %d + %d = %d", dice1, dice2, dice1 + dice2);
+        DrawText(buf, (int)textX, (int)textY, subSz, {148,73,68,255});
+        textY += subSz + 3*globalScale;
     } else {
         const char* hint = currentPlayerIsJailed()
-            ? "Di penjara! Lempar dadu atau bayar denda."
-            : "Lempar dadu untuk bermain!";
-        DrawText(hint, (int)textX, (int)(boxY + 16*globalScale),
-                 subSz, {120,80,75,255});
+            ? "Di penjara — lempar dadu / bayar denda"
+            : "Lempar dadu untuk bermain";
+        DrawText(hint, (int)textX, (int)textY, subSz, {148,73,68,200});
+        textY += subSz + 3*globalScale;
+    }
+
+    // ── event log lines (newest first) ────────────────────────────────────
+    int logSz   = (int)(11 * globalScale);
+    float lineH = (float)(logSz + 3) * globalScale;
+    int maxLineW = (int)(boxW - 16*globalScale);
+    for (const auto& entry : eventLog) {
+        if (textY + logSz > boxY + boxH - 4*globalScale) break;
+        // truncate if too wide
+        std::string line = entry;
+        while (!line.empty() &&
+               MeasureText(line.c_str(), logSz) > maxLineW)
+            line.pop_back();
+        if (line.size() < entry.size()) line += "..";
+        DrawText(line.c_str(), (int)textX, (int)textY, logSz, {60,30,25,220});
+        textY += lineH;
     }
 
     float actionsLabelY = boxY + boxH + 10.0f * globalScale;
@@ -1467,26 +2034,22 @@ void GameScreen::drawPlayTab(float cardX, float cardScale) {
         return;
     }
 
-    if (currentPlayerIsJailed() && hasRolled) {
-        DrawText("AKSI PENJARA", (int)boxX, (int)actionsLabelY, labelSz, {148,73,68,255});
-        Color border = btnBuyProperty.isDisabled() ? Color{170,170,170,180} : Color{80,40,35,255};
-        btnBuyProperty.draw();
-        DrawRectangleLinesEx({btnBuyProperty.getX(), btnBuyProperty.getY(),
-                              btnBuyProperty.getWidth(), btnBuyProperty.getHeight()}, 1.5f, border);
-    } else {
-        DrawText("ACTIONS", (int)boxX, (int)actionsLabelY, labelSz, {148,73,68,255});
-        auto drawBtn = [&](Button& btn) {
-            btn.draw();
-            Color border = btn.isDisabled() ? Color{170,170,170,180} : Color{80,40,35,255};
-            DrawRectangleLinesEx({btn.getX(), btn.getY(), btn.getWidth(), btn.getHeight()},
-                                 1.5f, border);
-        };
-        drawBtn(btnBuyProperty);
-        drawBtn(btnAuction);
-        drawBtn(btnBuildHouse);
-        drawBtn(btnMortgage);
-        drawBtn(btnRedeem);
+    if (debtMode) {
+        drawDebtMode(cardX, cardScale);
+        return;
     }
+
+    DrawText("ACTIONS", (int)boxX, (int)actionsLabelY, labelSz, {148,73,68,255});
+    auto drawBtn = [&](Button& btn) {
+        btn.draw();
+        Color border = btn.isDisabled() ? Color{170,170,170,180} : Color{80,40,35,255};
+        DrawRectangleLinesEx({btn.getX(), btn.getY(), btn.getWidth(), btn.getHeight()},
+                             1.5f, border);
+    };
+    drawBtn(btnAuction);
+    drawBtn(btnBuildHouse);
+    drawBtn(btnMortgage);
+    drawBtn(btnRedeem);
 
     // skill cards section — below action buttons
     float cardSectionY = btnRedeem.getY() + btnRedeem.getHeight() + 10.0f * globalScale;
@@ -1547,8 +2110,9 @@ void GameScreen::drawAssetsTab(float cardX, float cardScale) {
             }
             DrawRectangleLinesEx({stripX, stripY, stripW, stripH}, 1, {80,40,35,255});
 
-            // text
+            // text — vertically centered in the strip
             float textX = stripX + stripW + 6.0f * globalScale;
+            float textY = stripY + (stripH - rowSz) / 2.0f;
             std::string info = prop->getTileCode() + " " + prop->getTileName();
             if (prop->isMortgage()) info += " [GADAI]";
             int lvl = prop->getLevel();
@@ -1558,7 +2122,7 @@ void GameScreen::drawAssetsTab(float cardX, float cardScale) {
             } else if (lvl == 5) {
                 info += " [H]";
             }
-            DrawText(info.c_str(), (int)textX, (int)listY, rowSz, BLACK);
+            DrawText(info.c_str(), (int)textX, (int)textY, rowSz, BLACK);
             listY += rowH;
         }
     }
@@ -1917,47 +2481,52 @@ void GameScreen::updateAuction() {
 
     Player* bidder = auctionOrder[auctionIdx];
 
+    // helper: advance idx to next non-passed bidder safely
+    auto advanceAuction = [&]() {
+        int sz = (int)auctionOrder.size();
+        int next = (auctionIdx + 1) % sz;
+        int steps = 0;
+        while (auctionPassed[next] && steps < sz) {
+            next = (next + 1) % sz;
+            steps++;
+        }
+        auctionIdx = next;
+    };
+
     if (btnAuctionBid.isClicked() && auctionInputLen > 0) {
         int bid = std::stoi(std::string(auctionInputBuf));
         if (bid > auctionHighBid && bid <= bidder->getBalance()) {
             auctionHighBid = bid;
             auctionHighBidder = bidder;
             auctionInputLen = 0; auctionInputBuf[0] = '\0';
-            // advance to next non-passed bidder
-            int next = (auctionIdx + 1) % (int)auctionOrder.size();
-            while (auctionPassed[next] && next != auctionIdx)
-                next = (next + 1) % (int)auctionOrder.size();
-            auctionIdx = next;
+            advanceAuction();
         } else {
-            lastEvent = "Tawaran harus > " + std::to_string(auctionHighBid) + " dan <= saldo.";
+            pushLog("Tawaran harus > " + std::to_string(auctionHighBid) + " dan <= saldo.");
         }
     }
 
     if (btnAuctionPass.isClicked()) {
         auctionPassed[auctionIdx] = true;
         auctionInputLen = 0; auctionInputBuf[0] = '\0';
-        int next = (auctionIdx + 1) % (int)auctionOrder.size();
-        while (auctionPassed[next] && next != auctionIdx)
-            next = (next + 1) % (int)auctionOrder.size();
-        auctionIdx = next;
+        advanceAuction();
     }
 
     // count remaining (non-passed) bidders
     int remaining = 0;
-    for (bool p : auctionPassed) if (!p) remaining++;
+    for (bool p2 : auctionPassed) if (!p2) remaining++;
 
-    if (remaining <= 1) {
-        // auction ends
+    if (remaining == 0 || (remaining == 1 && auctionHighBidder != nullptr)) {
+        // auction ends — winner takes property
         if (auctionHighBidder) {
             auctionHighBidder->operator+=(-auctionHighBid);
             auctionHighBidder->addOwnedProperty(auctionProp);
             gs->recomputeMonopolyForGroup(auctionProp->getColorGroup());
-            lastEvent = auctionHighBidder->getUsername() + " menang lelang M"
-                        + std::to_string(auctionHighBid);
+            pushLog(auctionHighBidder->getUsername() + " menang lelang M"
+                        + std::to_string(auctionHighBid));
             gs->addLog(*auctionHighBidder, "LELANG", auctionProp->getTileCode()
                        + " M" + std::to_string(auctionHighBid));
         } else {
-            lastEvent = "Tidak ada pemenang lelang.";
+            pushLog("Tidak ada pemenang lelang — properti kembali ke bank.");
         }
         auctionMode = false;
         auctionProp = nullptr;
@@ -2070,10 +2639,10 @@ void GameScreen::useCardWithTarget(int cardIdx, CardMode mode) {
             if (pl != p && pl->getStatus() != "BANKRUPT")
                 opts.push_back(pl->getUsername());
         }
-        if (opts.empty()) { lastEvent = "Tidak ada pemain lain."; return; }
+        if (opts.empty()) { pushLog("Tidak ada pemain lain."); return; }
         pendingCardIdx = cardIdx;
         cardMode       = mode;
-        openSelPopup("LASSO — Pilih Pemain", opts);
+        openSelPopup("LASSO — Pilih Pemain", opts, SelAction::LASSO);
     } else if (mode == CardMode::DEMOLITION_SELECT) {
         // step 1: pick opponent who has buildings
         std::vector<std::string> opts;
@@ -2082,11 +2651,11 @@ void GameScreen::useCardWithTarget(int cardIdx, CardMode mode) {
             for (auto* prop : pl->getOwnedProperties())
                 if (prop->getLevel() > 0) { opts.push_back(pl->getUsername()); break; }
         }
-        if (opts.empty()) { lastEvent = "Tidak ada bangunan lawan."; return; }
+        if (opts.empty()) { pushLog("Tidak ada bangunan lawan."); return; }
         pendingCardIdx       = cardIdx;
         cardMode             = mode;
         demolitionPlayerPick = -1;
-        openSelPopup("DEMOLITION — Pilih Pemain", opts);
+        openSelPopup("DEMOLITION — Pilih Pemain", opts, SelAction::DEMOLITION_PLAYER);
     }
 }
 
@@ -2117,7 +2686,7 @@ void GameScreen::finishLasso(int playerIdx) {
     SkillCardManager::applyLasso(*p, *target, p->getCurrTile());
     p->setSkillUsed(true);
     gs->addLog(*p, "GUNAKAN_KEMAMPUAN", "LassoCard -> " + target->getUsername());
-    lastEvent = target->getUsername() + " ditarik ke " + gs->tiles[p->getCurrTile()]->getTileName();
+    pushLog(target->getUsername() + " ditarik ke " + gs->tiles[p->getCurrTile()]->getTileName());
     drainAndStoreEvents();
     cardMode = CardMode::NONE; pendingCardIdx = -1;
 }
@@ -2145,7 +2714,7 @@ void GameScreen::finishDemolition(int playerIdx, int propIdx) {
     SkillCardManager::applyDemolition(*tProp);
     p->setSkillUsed(true);
     gs->addLog(*p, "GUNAKAN_KEMAMPUAN", "DemolitionCard -> " + tProp->getTileCode());
-    lastEvent = "Bangunan di " + tProp->getTileCode() + " dihancurkan!";
+    pushLog("Bangunan di " + tProp->getTileCode() + " dihancurkan!");
     drainAndStoreEvents();
     cardMode = CardMode::NONE; pendingCardIdx = -1;
     demolitionPlayerPick = -1;
@@ -2192,10 +2761,12 @@ void GameScreen::drawSkillCardSection(float cardX, float cardScale, float startY
 // ══════════════════════════════════════════════════════════════════════════════
 // SELECTION POPUP (LASSO / DEMOLITION)
 // ══════════════════════════════════════════════════════════════════════════════
-void GameScreen::openSelPopup(const std::string& title, const std::vector<std::string>& opts) {
+void GameScreen::openSelPopup(const std::string& title, const std::vector<std::string>& opts,
+                               SelAction action) {
     selPopupTitle  = title;
     selOptions     = opts;
     selPopupResult = -1;
+    selAction      = action;
     showSelPopup   = true;
 
     int sw = GetScreenWidth(), sh = GetScreenHeight();
@@ -2222,20 +2793,28 @@ void GameScreen::updateSelPopup() {
             break;
         }
     }
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        showSelPopup = false; selPopupResult = -1;
-        cardMode = CardMode::NONE; pendingCardIdx = -1; demolitionPlayerPick = -1;
-        return;
+    // Click outside the popup box = cancel
+    if (showSelPopup && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        int sw = GetScreenWidth(), sh = GetScreenHeight();
+        float popW = 340.0f * globalScale;
+        float popH = (80.0f + selOptions.size() * 32.0f) * globalScale;
+        float popX = (sw - popW) / 2.0f, popY = (sh - popH) / 2.0f;
+        Vector2 mouse = GetMousePosition();
+        if (!CheckCollisionPointRec(mouse, {popX, popY, popW, popH})) {
+            showSelPopup = false; selPopupResult = -1;
+            cardMode = CardMode::NONE; pendingCardIdx = -1; demolitionPlayerPick = -1;
+            selAction = SelAction::NONE;
+        }
     }
     if (!showSelPopup && selPopupResult >= 0) {
-        if (cardMode == CardMode::LASSO_SELECT) {
+        switch (selAction) {
+        case SelAction::LASSO:
             finishLasso(selPopupResult);
-        } else if (cardMode == CardMode::DEMOLITION_SELECT) {
+            break;
+        case SelAction::DEMOLITION_PLAYER:
             if (demolitionPlayerPick < 0) {
-                // step 1 done — pick player; now build property list for that player
                 demolitionPlayerPick = selPopupResult;
                 Player* p = gs->currentTurnPlayer();
-                // find that opponent's properties with buildings
                 std::vector<Player*> opps;
                 for (auto* pl : gs->players) {
                     if (pl == p || pl->getStatus() == "BANKRUPT") continue;
@@ -2249,11 +2828,44 @@ void GameScreen::updateSelPopup() {
                         if (prop->getLevel() > 0)
                             propOpts.push_back(prop->getTileCode() + " " + prop->getTileName()
                                                + " (lvl " + std::to_string(prop->getLevel()) + ")");
-                    openSelPopup("DEMOLITION — Pilih Bangunan", propOpts);
+                    openSelPopup("DEMOLITION — Pilih Bangunan", propOpts,
+                                 SelAction::DEMOLITION_PROP);
                 }
-            } else {
-                finishDemolition(demolitionPlayerPick, selPopupResult);
             }
+            break;
+        case SelAction::DEMOLITION_PROP:
+            finishDemolition(demolitionPlayerPick, selPopupResult);
+            break;
+        case SelAction::GADAI:
+            if (selPopupResult < (int)gadaiProps.size()) {
+                Player* p = gs->currentTurnPlayer();
+                if (p && gadaiProps[selPopupResult]) {
+                    if (!PropertyManager::mortgage(*p, *gadaiProps[selPopupResult])) {
+                        showPopup = true; popupTitle = "GADAI";
+                        popupMsg  = "Tidak bisa menggadai properti ini.";
+                    } else {
+                        drainAndStoreEvents();
+                        pushLog("Properti digadaikan. Saldo: M"
+                                    + std::to_string(p->getBalance()));
+                    }
+                }
+            }
+            selAction = SelAction::NONE;
+            break;
+        case SelAction::TEBUS:
+            if (selPopupResult < (int)tebusProps.size()) {
+                Player* p = gs->currentTurnPlayer();
+                if (p && tebusProps[selPopupResult]) {
+                    bankruptcy->cmdTebus(*p, tebusProps[selPopupResult]->getTileCode());
+                    drainAndStoreEvents();
+                    pushLog("Properti ditebus. Saldo: M"
+                                + std::to_string(p->getBalance()));
+                }
+            }
+            selAction = SelAction::NONE;
+            break;
+        default:
+            break;
         }
     }
 }
@@ -2276,9 +2888,116 @@ void GameScreen::drawSelPopup() {
              titleSz, {80,40,35,255});
 
     int hintSz = (int)(10 * globalScale);
-    const char* hint = "ESC untuk batal";
+    const char* hint = "Klik di luar untuk batal";
     DrawText(hint, (int)(popX + 16.0f*globalScale), (int)(popY + popH - 16.0f*globalScale),
              hintSz, {160,120,100,160});
 
     for (auto& b : btnSelOptions) b.draw();
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GADAI / TEBUS POPUP HELPERS
+// ──────────────────────────────────────────────────────────────────────────────
+void GameScreen::openGadaiPopup() {
+    if (!gs) return;
+    Player* p = gs->currentTurnPlayer();
+    if (!p) return;
+
+    gadaiProps.clear();
+    std::vector<std::string> opts;
+    for (auto* prop : p->getOwnedProperties()) {
+        if (prop && prop->getTileOwner() == p && !prop->isMortgage()) {
+            std::string label = prop->getTileCode() + " " + prop->getTileName()
+                                + "  [+M" + std::to_string(prop->getMortgageValue()) + "]";
+            opts.push_back(label);
+            gadaiProps.push_back(prop);
+        }
+    }
+    if (opts.empty()) {
+        showPopup = true; popupTitle = "GADAI";
+        popupMsg  = "Tidak ada properti yang\nbisa digadaikan.";
+        return;
+    }
+    openSelPopup("GADAI — Pilih Properti", opts, SelAction::GADAI);
+}
+
+void GameScreen::openTebusPopup() {
+    if (!gs) return;
+    Player* p = gs->currentTurnPlayer();
+    if (!p) return;
+
+    tebusProps.clear();
+    std::vector<std::string> opts;
+    for (auto* prop : p->getOwnedProperties()) {
+        if (prop && prop->getTileOwner() == p && prop->isMortgage()) {
+            int redeemCost = static_cast<int>(prop->getMortgageValue() * 1.1f);
+            std::string label = prop->getTileCode() + " " + prop->getTileName()
+                                + "  [-M" + std::to_string(redeemCost) + "]";
+            opts.push_back(label);
+            tebusProps.push_back(prop);
+        }
+    }
+    if (opts.empty()) {
+        showPopup = true; popupTitle = "TEBUS";
+        popupMsg  = "Tidak ada properti yang\nsedang digadaikan.";
+        return;
+    }
+    openSelPopup("TEBUS — Pilih Properti", opts, SelAction::TEBUS);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// DEBT MODE DRAW
+// ──────────────────────────────────────────────────────────────────────────────
+void GameScreen::drawDebtMode(float cardX, float cardScale) {
+    if (!gs) return;
+    Player* p = gs->currentTurnPlayer();
+
+    float pad   = 12.0f * globalScale;
+    float boxX  = cardX + pad + 20.0f;
+    float boxY  = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f;
+    float boxW  = cardPanel.width * cardScale - 6.0f * pad;
+    float boxH  = 100.0f * globalScale;
+
+    // warning box
+    DrawRectangleRec({boxX, boxY, boxW, boxH}, {255,220,210,255});
+    DrawRectangleLinesEx({boxX, boxY, boxW, boxH}, 2.5f, {180,50,40,255});
+
+    int titleSz = (int)(14 * globalScale);
+    int subSz   = (int)(12 * globalScale);
+    DrawText("! TIDAK SANGGUP BAYAR SEWA",
+             (int)(boxX + 8*globalScale), (int)(boxY + 8*globalScale),
+             titleSz, {180,50,40,255});
+
+    char buf1[64], buf2[64];
+    std::snprintf(buf1, sizeof(buf1), "Sewa: M%d", debtAmount);
+    std::snprintf(buf2, sizeof(buf2), "Saldo: M%d  (kurang M%d)",
+                  p ? p->getBalance() : 0,
+                  p ? debtAmount - p->getBalance() : debtAmount);
+    DrawText(buf1, (int)(boxX + 8*globalScale),
+             (int)(boxY + 8*globalScale + titleSz + 4*globalScale), subSz, BLACK);
+    DrawText(buf2, (int)(boxX + 8*globalScale),
+             (int)(boxY + 8*globalScale + titleSz + 4*globalScale + subSz + 4*globalScale),
+             subSz, {120,50,45,255});
+
+    // section label
+    float labY = boxY + boxH + 10.0f * globalScale;
+    int   labSz = (int)(13 * globalScale);
+    DrawText("CARA BAYAR", (int)boxX, (int)labY, labSz, {148,73,68,255});
+
+    // GADAI / LELANG buttons
+    auto drawDebtBtn = [&](Button& btn, Color border) {
+        btn.draw();
+        DrawRectangleLinesEx({btn.getX(), btn.getY(), btn.getWidth(), btn.getHeight()},
+                             1.5f, border);
+    };
+    drawDebtBtn(btnDebtGadai,  {150,100,30,255});
+    drawDebtBtn(btnDebtLelang, {50,90,170,255});
+
+    // force button
+    bool canAfford = (p && p->getBalance() >= debtAmount);
+    bool noOptions = (p && p->getOwnedProperties().empty());
+    if (noOptions || canAfford) {
+        btnDebtForce.setDisabled(false);
+        btnDebtForce.draw();
+    }
 }

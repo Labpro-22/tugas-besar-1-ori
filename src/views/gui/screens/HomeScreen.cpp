@@ -96,11 +96,6 @@ void HomeScreen::update(float dt) {
             }
             return;
         }
-        if (IsKeyPressed(KEY_ESCAPE)) {
-            showPopup = false;
-            loadPathLen = 0; loadPathBuf[0] = '\0';
-            loadError.clear();
-        }
         return;
     }
 
@@ -150,7 +145,7 @@ void HomeScreen::draw() {
                  (int)(popY + 18.0f * globalScale), titleSz, {80, 40, 35, 255});
 
         int subSz = (int)(12 * globalScale);
-        DrawText("Path file save (contoh: save/game.json):",
+        DrawText("Nama file save (contoh: test.txt):",
                  (int)(popX + 18.0f * globalScale),
                  (int)(popY + 18.0f * globalScale + titleSz + 12.0f * globalScale),
                  subSz, BLACK);
@@ -174,39 +169,28 @@ void HomeScreen::draw() {
                      (int)(inY + inH + 4.0f * globalScale), errSz, RED);
         }
 
-        // LOAD button
-        float btnW = 90.0f * globalScale, btnH = 28.0f * globalScale;
-        float btnX = popX + (popW - btnW) / 2.0f;
-        float btnY2 = inY + inH + 26.0f * globalScale;
-        bool hoverLoad = (GetMouseX() >= btnX && GetMouseX() <= btnX + btnW &&
-                          GetMouseY() >= btnY2 && GetMouseY() <= btnY2 + btnH);
-        DrawRectangleRec({btnX, btnY2, btnW, btnH},
-                         hoverLoad ? Color{148,73,68,255} : Color{120,50,45,255});
-        int lSz = (int)(13 * globalScale);
-        int lw  = MeasureText("LOAD", lSz);
-        DrawText("LOAD", (int)(btnX + (btnW - lw)/2.0f),
-                 (int)(btnY2 + (btnH - lSz)/2.0f), lSz, WHITE);
-        if (hoverLoad && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && loadPathLen > 0) {
-            std::string path(loadPathBuf);
-            if (path.find('/') == std::string::npos && path.find('\\') == std::string::npos)
-                path = "save/" + path;
-            std::ifstream test(path);
-            if (test.good()) {
-                shouldLoadSave = true;
-                loadSavePath   = path;
-                nextScreen     = AppScreen::GAME;
-                shouldChangeScreen = true;
-                showPopup = false;
-                loadError.clear();
-            } else {
-                loadError = "File tidak ditemukan: " + path;
-            }
+        // BATAL button
+        float batalW = 80.0f * globalScale, batalH = 26.0f * globalScale;
+        float batalX = popX + (popW - batalW) / 2.0f;
+        float batalY = popY + popH - batalH - 10.0f * globalScale;
+        bool hBatal = (GetMouseX() >= batalX && GetMouseX() <= batalX + batalW &&
+                       GetMouseY() >= batalY && GetMouseY() <= batalY + batalH);
+        DrawRectangleRec({batalX, batalY, batalW, batalH},
+                         hBatal ? Color{100,50,45,255} : Color{80,40,35,255});
+        int bSz = (int)(12 * globalScale);
+        int bw  = MeasureText("BATAL", bSz);
+        DrawText("BATAL", (int)(batalX + (batalW - bw)/2.0f),
+                 (int)(batalY + (batalH - bSz)/2.0f), bSz, WHITE);
+        if (hBatal && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            showPopup = false;
+            loadPathLen = 0; loadPathBuf[0] = '\0';
+            loadError.clear();
         }
 
         int hintSz = (int)(10 * globalScale);
-        const char* hint = "ENTER untuk load  |  ESC untuk batal";
+        const char* hint = "ENTER untuk load";
         int hw = MeasureText(hint, hintSz);
         DrawText(hint, (int)(popX + (popW - hw) / 2.0f),
-                 (int)(popY + popH - 16.0f * globalScale), hintSz, {120, 80, 75, 255});
+                 (int)(batalY - 14.0f * globalScale), hintSz, {120, 80, 75, 255});
     }
 }

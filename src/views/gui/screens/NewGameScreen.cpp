@@ -138,7 +138,7 @@ void NewGameScreen::update(float dt) {
         int key = GetCharPressed();
         int len = (int)std::strlen(gameConfig->playerNames[idx]);
         while (key > 0) {
-            if (len < GameConfig::MAX_NAME_LEN && key >= 32 && key <= 125) {
+            if (len < GameConfig::MAX_NAME_LEN && key > 32 && key <= 125) {
                 gameConfig->playerNames[idx][len] = (char)key;
                 gameConfig->playerNames[idx][len + 1] = '\0';
                 len++;

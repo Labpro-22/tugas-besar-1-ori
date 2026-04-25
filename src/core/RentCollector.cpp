@@ -6,6 +6,9 @@
 #include "include/models/player/Player.hpp"
 #include "include/models/player/Bot.hpp"
 #include "include/models/tiles/PropertyTile.hpp"
+#ifdef GUI_MODE
+#include "include/utils/exceptions/UnablePayRentException.hpp"
+#endif
 
 #include <iostream>
 #include <limits>
@@ -55,8 +58,13 @@ void RentCollector::autoPayRent(Player &p, PropertyTile &prop) {
                 bankruptcy.processBankruptcy(p, owner);
             }
         } else {
+#ifdef GUI_MODE
+            // In GUI mode, throw instead of blocking on stdin
+            throw UnablePayRentException("Sewa M" + to_string(rent));
+#else
             cout << "Saldo tidak cukup untuk membayar sewa M" << rent << "!\n";
             recoverForRent(p, prop);
+#endif
         }
         return;
     }
