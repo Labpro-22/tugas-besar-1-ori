@@ -1,29 +1,23 @@
 #include "include/core/BuyManager.hpp"
-
-#include "include/models/player/Player.hpp"
 #include "include/models/tiles/PropertyTile.hpp"
-#include "utils/exceptions/UnablePayPropertyException.hpp"
 
-bool BuyManager::buy(Player &buyer, Tile &tile)
-{
-    PropertyTile *property = dynamic_cast<PropertyTile *>(&tile);
-    if (property == nullptr)
-    {
-        throw UnablePayPropertyException("Target tile is not a property tile.");
+bool BuyManager::buy(Player &buyer, Tile &tile) {
+    auto *prop = dynamic_cast<PropertyTile*>(&tile);
+
+    if (!prop) {
+        return false;
     }
 
-    if (property->getTileOwner() != nullptr)
-    {
-        throw UnablePayPropertyException("Property already has an owner.");
+    if (prop->getTileOwner()) {
+        return false;
     }
 
-    int price = property->getBuyPrice();
-    if (buyer.getBalance() < price)
-    {
-        throw UnablePayPropertyException("Insufficient balance to buy this property.");
+    if (buyer.getBalance() < prop->getBuyPrice()) {
+        return false;
     }
 
-    buyer.addBalance(-price);
-    buyer.addOwnedProperty(property);
+    buyer += -prop->getBuyPrice();
+    buyer.addOwnedProperty(prop);
+
     return true;
 }

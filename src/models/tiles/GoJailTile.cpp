@@ -1,11 +1,9 @@
 #include "include/models/tiles/GoJailTile.hpp"
+#include "include/core/GameContext.hpp"
 
 #include "include/models/player/Player.hpp"
 
 GoJailTile::GoJailTile(const std::string &code, const std::string &id, const std::string &name, const std::string &type)
     : SpecialTile(code, id, name, type) {}
 
-void GoJailTile::onLanded(Player &player)
-{
-    player.setStatus("JAIL");
-}
+void GoJailTile::onLanded(Player &player, GameContext &ctx) { ctx.sendToJail(player); }

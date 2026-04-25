@@ -66,7 +66,7 @@ class OutputFormatter {
         void initializeColors(Board &b);
         string generateCode(string color_group);
 
-        string getGroupColor(string color_group);
+        string getGroupColor(string color_group, string tile_type = "");
         string getColorCode(string color_group, string tile_type);
         string centerOut(string str, int width);
         string leftOut(string str, int width);

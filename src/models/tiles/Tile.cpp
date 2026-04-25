@@ -23,7 +23,4 @@ std::string Tile::getTileType() const
     return type;
 }
 
-void Tile::onLanded(Player &player)
-{
-    (void)player;
-}
+void Tile::onLanded(Player &player, GameContext &ctx) {}

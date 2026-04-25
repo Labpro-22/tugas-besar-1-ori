@@ -1,5 +1,4 @@
 #include "utils/exceptions/UndesirableException.hpp"
 
-UndesirableException::UndesirableException() : GeneralException("You encountered an undesirable event!") {}
-
+UndesirableException::UndesirableException() : GeneralException("Kejadian tidak diinginkan.") {}
 UndesirableException::UndesirableException(const std::string& msg) : GeneralException(msg) {}

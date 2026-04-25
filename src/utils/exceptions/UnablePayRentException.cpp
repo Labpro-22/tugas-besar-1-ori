@@ -1,5 +1,5 @@
 #include "utils/exceptions/UnablePayRentException.hpp"
 
-UnablePayRentException::UnablePayRentException() : GeneralException("You are unable to pay the rent!") {}
+UnablePayRentException::UnablePayRentException() : GeneralException("Tidak mampu membayar sewa.") {}
 
 UnablePayRentException::UnablePayRentException(const std::string& msg) : GeneralException(msg) {}

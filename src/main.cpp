@@ -1,6 +1,6 @@
-#include "Origami.hpp"
+#include "include/core/GameLoop.hpp"
 
 int main() {
-    Origami::run();
+    GameLoop::run();
     return 0;
 }
