@@ -16,8 +16,13 @@ private:
     float titleScale;
     float titleX, titleY;
 
-    bool showLoadGameMsg;
-    float msgTimer;
+    bool  showPopup;
+    float globalScale;
+
+    // load game text input state
+    char  loadPathBuf[128] = {};
+    int   loadPathLen = 0;
+    std::string loadError;
 
 public:
     HomeScreen();

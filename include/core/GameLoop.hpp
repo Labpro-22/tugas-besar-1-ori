@@ -4,6 +4,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include "include/core/GameConfig.hpp"
 #include "include/core/GameStates.hpp"
 
 class GameState;
@@ -37,7 +38,22 @@ private:
     friend class BotController;
 
 public:
+    GameLoop() : state(nullptr) {}
+    ~GameLoop();
+
     static void run();
+
+    // GUI factory: builds a ready-to-play GameLoop from GUI config
+    static GameLoop* buildForGui(GameConfig& cfg, const std::string& configDir);
+
+    // GUI helpers exposed for GameScreen
+    void advanceTurn();
+    void checkWinGui();
+    GameState* getState() const;
+
+    // Save / load for GUI
+    void saveToFile(const std::string& filepath);
+    static GameLoop* buildFromSave(const std::string& filepath, const std::string& configDir);
 };
 
 #endif

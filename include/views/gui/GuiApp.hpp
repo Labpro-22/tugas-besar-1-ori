@@ -3,7 +3,9 @@
 
 #include <memory>
 #include "views/gui/Screen.hpp"
-#include "config/GameConfig.hpp"
+#include "core/GameConfig.hpp"
+
+class GameLoop;
 
 class GuiApp {
 private:
@@ -14,6 +16,7 @@ private:
     std::unique_ptr<Screen> currentScreen;
     AppScreen activeScreen;
     GameConfig gameConfig;
+    GameLoop*  gameLoop = nullptr;
 
     void switchScreen(AppScreen screen);
 

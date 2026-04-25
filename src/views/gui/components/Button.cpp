@@ -19,6 +19,7 @@ void Button::load(const std::string& path, float xPos, float yPos, float scl) {
     loaded = true;
     useHover = false;
     isTextBtn = false;
+    disabled = false;
 }
 
 void Button::loadWithHover(const std::string& path, const std::string& hoverPath,
@@ -28,6 +29,7 @@ void Button::loadWithHover(const std::string& path, const std::string& hoverPath
     if (texture.id == 0) {
         loaded = false;
         useHover = false;
+        disabled = false;
         return;
     }
     hoverTexture = LoadTexture(hoverPath.c_str());
@@ -39,6 +41,7 @@ void Button::loadWithHover(const std::string& path, const std::string& hoverPath
     loaded = true;
     useHover = (hoverTexture.id > 0);
     isTextBtn = false;
+    disabled = false;
 }
 
 void Button::loadAsText(const std::string& label, float xPos, float yPos, float w, float h,
@@ -54,6 +57,7 @@ void Button::loadAsText(const std::string& label, float xPos, float yPos, float 
     loaded = true;
     isTextBtn = true;
     useHover = false;
+    disabled = false;
 }
 
 void Button::unload() {
@@ -79,26 +83,48 @@ void Button::setScale(float scl) {
     }
 }
 
-void Button::setActive(bool a) { active = a; }
-bool Button::isActive() const { return active; }
+void Button::setColors(Color bg, Color hover, Color fg) {
+    bgColor = bg;
+    hoverColor = hover;
+    textColor = fg;
+}
 
-void Button::setHitRect(float, float, float, float) {}
+void Button::setActive(bool a)    { active = a; }
+bool Button::isActive() const     { return active; }
+void Button::setDisabled(bool d)  { disabled = d; }
+bool Button::isDisabled() const   { return disabled; }
+
+void Button::setHitRect(float hx, float hy, float hw, float hh) {
+    hasHitRect = true;
+    hitX = hx; hitY = hy; hitW = hw; hitH = hh;
+}
 
 bool Button::isHovered() const {
-    if (!loaded) return false;
+    if (!loaded || disabled) return false;
     Vector2 mouse = GetMousePosition();
+    if (hasHitRect)
+        return (mouse.x >= hitX && mouse.x <= hitX + hitW &&
+                mouse.y >= hitY && mouse.y <= hitY + hitH);
     return (mouse.x >= x && mouse.x <= x + width &&
             mouse.y >= y && mouse.y <= y + height);
 }
 
 bool Button::isClicked() const {
-    return isHovered() && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+    return !disabled && isHovered() && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
 }
 
 void Button::draw() const {
     if (!loaded) return;
     if (isTextBtn) {
-        if (active) {
+        if (disabled) {
+            // Disabled: dimmed background + gray text and outline
+            DrawRectangleRec({x, y, width, height}, {200, 190, 180, 180});
+            DrawRectangleLinesEx({x, y, width, height}, 1, {170, 170, 170, 180});
+            int fontSize = static_cast<int>(height * 0.5f);
+            int tw = MeasureText(textLabel.c_str(), fontSize);
+            DrawText(textLabel.c_str(), static_cast<int>(x + (width - tw) / 2.0f),
+                     static_cast<int>(y + (height - fontSize) / 2.0f), fontSize, {170, 170, 170, 180});
+        } else if (active) {
             DrawRectangleRec({x, y, width, height}, {255, 235, 202, 255});
             DrawRectangleLinesEx({x, y, width, height}, 1, {120, 60, 55, 255});
             int fontSize = static_cast<int>(height * 0.5f);
@@ -115,7 +141,8 @@ void Button::draw() const {
                      static_cast<int>(y + (height - fontSize) / 2.0f), fontSize, textColor);
         }
     } else {
-        const Texture2D& tex = (useHover && isHovered()) ? hoverTexture : texture;
-        DrawTextureEx(tex, {x, y}, 0.0f, scale, WHITE);
+        const Texture2D& tex = (useHover && isHovered() && !disabled) ? hoverTexture : texture;
+        Color tint = disabled ? Fade(WHITE, 0.5f) : WHITE;
+        DrawTextureEx(tex, {x, y}, 0.0f, scale, tint);
     }
 }

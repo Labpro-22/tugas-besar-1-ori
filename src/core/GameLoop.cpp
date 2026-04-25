@@ -495,8 +495,7 @@ void GameLoop::run() {
         GameLoop loop;
         loop.state = gs;
         loop.start();
-        
-        delete gs;
+        // ~GameLoop() deletes state
     } else {
         string savePath;
         cout << "Path file save: ";
@@ -516,12 +515,89 @@ void GameLoop::run() {
             loop.state = gs;
             loop.applyPropertyState(sstate);
             loop.start();
-            
-            delete gs;
+            // ~GameLoop() deletes state
         } catch (const SaveLoadException &e) {
             cout << "Gagal memuat: " << e.what() << "\n";
         } catch (const exception &e) {
             cout << "Error: " << e.what() << "\n";
         }
     }
+}
+// ── Destructor ────────────────────────────────────────────────────────────────
+GameLoop::~GameLoop() {
+    delete state;
+    state = nullptr;
+}
+
+// ── getState ──────────────────────────────────────────────────────────────────
+GameState* GameLoop::getState() const { return state; }
+
+// ── advanceTurn ───────────────────────────────────────────────────────────────
+void GameLoop::advanceTurn() { nextTurn(); }
+
+// ── checkWinGui ───────────────────────────────────────────────────────────────
+void GameLoop::checkWinGui() { checkWinCondition(); }
+
+// ── buildForGui ───────────────────────────────────────────────────────────────
+GameLoop* GameLoop::buildForGui(GameConfig& cfg, const std::string& configDir) {
+    GameConfig ruleCfg = FileManager::loadGameConfig(configDir);
+    // copy player info from GUI config into the rule config
+    ruleCfg.playerCount = cfg.playerCount;
+    for (int i = 0; i < cfg.playerCount; i++) {
+        std::snprintf(ruleCfg.playerNames[i], GameConfig::MAX_NAME_LEN + 1,
+                      "%s", cfg.playerNames[i]);
+    }
+
+    auto tiles = FileManager::loadBoard(configDir);
+
+    vector<Player*> ps;
+    for (int i = 0; i < cfg.playerCount; i++) {
+        Player* p = new Player(string(cfg.playerNames[i]));
+        p->operator+=(ruleCfg.getInitialBalance());
+        ps.push_back(p);
+    }
+
+    vector<Player*> order = ps;
+    mt19937 rng(chrono::steady_clock::now().time_since_epoch().count());
+    shuffle(order.begin(), order.end(), rng);
+
+    int activeId = 0;
+    for (int i = 0; i < (int)ps.size(); i++) {
+        if (ps[i] == order[0]) { activeId = i; break; }
+    }
+
+    GameState* gs = new GameState(move(tiles), move(ps), move(order),
+                                   ruleCfg, ruleCfg.getMaxTurn(), 1, activeId);
+
+    GameLoop* loop = new GameLoop();
+    loop->state = gs;
+    loop->initDecks();
+    loop->distributeSkillCards();
+
+    return loop;
+}
+
+// ── saveToFile ────────────────────────────────────────────────────────────────
+void GameLoop::saveToFile(const std::string& filepath) {
+    if (!state) return;
+    auto sstate = buildSaveState();
+    GameStates::SavePermission perm;
+    perm.is_at_start_of_turn = !state->game_over;
+    FileManager::saveConfig(filepath, sstate, perm);
+}
+
+// ── buildFromSave ─────────────────────────────────────────────────────────────
+GameLoop* GameLoop::buildFromSave(const std::string& filepath, const std::string& configDir) {
+    auto sstate   = FileManager::loadConfig(filepath);
+    GameConfig cfg = FileManager::loadGameConfig(configDir);
+    auto tiles    = FileManager::loadBoard(configDir);
+    auto [ps, order, activeId] = buildPlayersFromState(sstate);
+
+    GameState* gs = new GameState(std::move(tiles), std::move(ps), std::move(order),
+                                   cfg, sstate.max_turn, sstate.current_turn, activeId);
+    GameLoop* loop = new GameLoop();
+    loop->state = gs;
+    loop->initDecks();
+    loop->applyPropertyState(sstate);
+    return loop;
 }

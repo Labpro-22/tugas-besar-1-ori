@@ -6,7 +6,7 @@ NewGameScreen::NewGameScreen(GameConfig& config) : bgTexture{}, playerCountLabel
     minMaxLabel{}, counterTex{},
     playerCount(2), iconSelected{false}, globalScale(1.0f),
     gameConfig(&config), activeNameField(-1) {
-    for (int i = 0; i < 6; i++) playerIcons[i] = {};
+    for (int i = 0; i < 4; i++) playerIcons[i] = {};
     iconSelected[0] = true;
     iconSelected[1] = true;
     config.playerCount = playerCount;
@@ -24,12 +24,10 @@ void NewGameScreen::loadAssets() {
     minMaxLabel = LoadTexture("assets/new-game-page/(MIN_ 2, MAX_ 6).png");
     counterTex = LoadTexture("assets/new-game-page/counter 2.png");
     TraceLog(LOG_INFO, "NGS: loading icons...");
-    playerIcons[0] = LoadTexture("assets/assets1/icon-1.png");
-    playerIcons[1] = LoadTexture("assets/assets1/icon-2.png");
-    playerIcons[2] = LoadTexture("assets/assets1/icon-3.png");
-    playerIcons[3] = LoadTexture("assets/assets1/icon-4.png");
-    playerIcons[4] = LoadTexture("assets/assets1/icon-5.png");
-    playerIcons[5] = LoadTexture("assets/assets1/icon-6.png");
+    playerIcons[0] = LoadTexture("assets/assets1/gru_b.png");
+    playerIcons[1] = LoadTexture("assets/assets1/minion_b.png");
+    playerIcons[2] = LoadTexture("assets/assets1/purple_b.png");
+    playerIcons[3] = LoadTexture("assets/assets1/banana_b.png");
     TraceLog(LOG_INFO, "NGS: loading buttons...");
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
@@ -58,7 +56,7 @@ void NewGameScreen::unloadAssets() {
     UnloadTexture(selectIconsLabel);
     UnloadTexture(minMaxLabel);
     UnloadTexture(counterTex);
-    for (int i = 0; i < 6; i++) UnloadTexture(playerIcons[i]);
+    for (int i = 0; i < 4; i++) UnloadTexture(playerIcons[i]);
     btnBack.unload();
     btnStart.unload();
     btnPlus.unload();

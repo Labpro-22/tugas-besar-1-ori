@@ -14,7 +14,7 @@ private:
     Texture2D selectIconsLabel;
     Texture2D minMaxLabel;
     Texture2D counterTex;
-    Texture2D playerIcons[6];
+    Texture2D playerIcons[4];
 
     Button btnBack;
     Button btnStart;
@@ -22,7 +22,7 @@ private:
     Button btnMinus;
 
     int playerCount;
-    bool iconSelected[6];
+    bool iconSelected[4];
 
     float globalScale;
 

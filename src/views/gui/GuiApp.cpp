@@ -3,6 +3,7 @@
 #include "views/gui/screens/NewGameScreen.hpp"
 #include "views/gui/screens/GameScreen.hpp"
 #include "views/gui/screens/SettingsScreen.hpp"
+#include "core/GameLoop.hpp"
 #include "raylib.h"
 
 GuiApp::GuiApp(int w, int h, const char* t)
@@ -11,15 +12,22 @@ GuiApp::GuiApp(int w, int h, const char* t)
 GameConfig& GuiApp::getGameConfig() { return gameConfig; }
 
 GuiApp::~GuiApp() {
-    if (currentScreen) {
-        currentScreen->unloadAssets();
-    }
+    if (currentScreen) currentScreen->unloadAssets();
+    delete gameLoop;
     CloseWindow();
 }
 
 void GuiApp::switchScreen(AppScreen screen) {
-    if (currentScreen) {
-        currentScreen->unloadAssets();
+    // capture load-save intent BEFORE unloading current screen
+    bool   loadSave = currentScreen ? currentScreen->shouldLoadSave : false;
+    std::string savePath = currentScreen ? currentScreen->loadSavePath : "";
+
+    if (currentScreen) currentScreen->unloadAssets();
+
+    // destroy previous game state when leaving GAME screen
+    if (activeScreen == AppScreen::GAME || screen != AppScreen::GAME) {
+        delete gameLoop;
+        gameLoop = nullptr;
     }
 
     activeScreen = screen;
@@ -31,10 +39,19 @@ void GuiApp::switchScreen(AppScreen screen) {
             currentScreen = std::make_unique<NewGameScreen>(gameConfig);
             break;
         case AppScreen::LOAD_GAME:
-            currentScreen = std::make_unique<HomeScreen>(); 
+            currentScreen = std::make_unique<HomeScreen>();
             break;
         case AppScreen::GAME:
-            currentScreen = std::make_unique<GameScreen>(gameConfig);
+            if (loadSave) {
+                try {
+                    gameLoop = GameLoop::buildFromSave(savePath, "config/");
+                } catch (...) {
+                    gameLoop = GameLoop::buildForGui(gameConfig, "config/");
+                }
+            } else {
+                gameLoop = GameLoop::buildForGui(gameConfig, "config/");
+            }
+            currentScreen = std::make_unique<GameScreen>(gameLoop);
             break;
         case AppScreen::SETTINGS:
             currentScreen = std::make_unique<SettingsScreen>();
@@ -52,12 +69,9 @@ void GuiApp::run() {
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
-
         currentScreen->update(dt);
 
-        if (currentScreen->shouldQuit) {
-            break;
-        }
+        if (currentScreen->shouldQuit) break;
 
         if (currentScreen->shouldChangeScreen) {
             currentScreen->shouldChangeScreen = false;

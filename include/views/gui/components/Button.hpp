@@ -20,6 +20,11 @@ private:
     Color hoverColor;
     Color textColor;
     bool active;
+    bool disabled = false;
+
+    // custom hit rect (optional; if not set, full bounds are used)
+    bool hasHitRect = false;
+    float hitX = 0, hitY = 0, hitW = 0, hitH = 0;
 
 public:
     Button();
@@ -33,8 +38,11 @@ public:
 
     void setPosition(float xPos, float yPos);
     void setScale(float scl);
+    void setColors(Color bg, Color hover, Color fg);
     void setActive(bool a);
     bool isActive() const;
+    void setDisabled(bool d);
+    bool isDisabled() const;
 
     bool isHovered() const;
     bool isClicked() const;

@@ -1,49 +1,53 @@
 #include "views/gui/screens/HomeScreen.hpp"
+#include <algorithm>
 #include <cmath>
+#include <fstream>
 
 HomeScreen::HomeScreen() : bgTexture{}, titleTexture{}, titleScale(0.5f), titleX(0), titleY(0),
-    showLoadGameMsg(false), msgTimer(0.0f) {}
+    showPopup(false), globalScale(1.0f) {}
 
 void HomeScreen::loadAssets() {
-    bgTexture = LoadTexture("assets/page_background.png");
+    bgTexture    = LoadTexture("assets/page_background.png");
     titleTexture = LoadTexture("assets/home_page/title.png");
 
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
+    globalScale = std::min(sw / 1280.0f, sh / 720.0f);
 
-    titleScale = std::min(sw / (float)titleTexture.width * 0.7f, sh / (float)titleTexture.height * 0.3f);
+    titleScale = std::min(sw / (float)titleTexture.width * 0.7f,
+                          sh / (float)titleTexture.height * 0.3f);
     titleX = (sw - titleTexture.width * titleScale) / 2.0f;
     titleY = sh * 0.12f;
 
-    const float TARGET_H = 60.0f;            
-    const float IMG_CONTENT_H = 78.0f;       
-    const float IMG_TOP_PAD   = 298.0f;      
-    const float IMG_W_SRC     = 707.0f;
+    const float TARGET_H      = 60.0f;
+    const float IMG_CONTENT_H = 78.0f;
+    const float IMG_TOP_PAD   = 298.0f;
     const float EXIT_TOP_PAD  = 300.0f;
+    const float IMG_W_SRC     = 707.0f;
 
-    float gs = std::min(sw / 1280.0f, sh / 720.0f);
-    float btnScale   = TARGET_H * gs / IMG_CONTENT_H;   
-    float contentH   = IMG_CONTENT_H * btnScale;         
-    float topPad     = IMG_TOP_PAD * btnScale;
-    float exitTopPad = EXIT_TOP_PAD * btnScale;
-    float gap        = 18.0f * gs;                       
-    float imgW       = IMG_W_SRC * btnScale;
-    float btnX       = (sw - imgW) / 2.0f;
+    float btnScale  = TARGET_H * globalScale / IMG_CONTENT_H;
+    float contentH  = IMG_CONTENT_H * btnScale;
+    float topPad    = IMG_TOP_PAD    * btnScale;
+    float exitTopPad= EXIT_TOP_PAD   * btnScale;
+    float gap       = 18.0f * globalScale;
+    float imgW      = IMG_W_SRC * btnScale;
+    float btnX      = (sw - imgW) / 2.0f;
 
     float firstContentY = sh * 0.42f;
-    float y1 = firstContentY - topPad;         
-    float y2 = y1 + contentH + gap;            
-    float y3 = y2 + contentH + gap;            
+    float y1 = firstContentY - topPad;
+    float y2 = y1 + contentH + gap;
+    float y3 = y2 + contentH + gap;
 
-    float btnNewGameX = btnX - (14.0f * gs);
+    float btnNewGameX = btnX - (14.0f * globalScale);
 
-    btnNewGame.load("assets/home_page/new-game 2.png", btnNewGameX, y1, btnScale);
-    btnLoadGame.load("assets/home_page/load-game 2.png", btnX, y2, btnScale);
-    btnExit.load   ("assets/home_page/exit 2.png",      btnX, y3, btnScale);
+    btnNewGame.load("assets/home_page/new-game 2.png",  btnNewGameX, y1, btnScale);
+    btnLoadGame.load("assets/home_page/load-game 2.png", btnX,        y2, btnScale);
+    btnExit.load    ("assets/home_page/exit 2.png",      btnX,        y3, btnScale);
 
-    btnNewGame.setHitRect(btnNewGameX, y1 + topPad,     imgW, contentH);
-    btnLoadGame.setHitRect(btnX, y2 + topPad,     imgW, contentH);
-    btnExit.setHitRect   (btnX, y3 + exitTopPad, imgW, contentH);
+    // set tight hit rects so overlapping images don't steal clicks
+    btnNewGame.setHitRect(btnNewGameX, y1 + topPad,      imgW, contentH);
+    btnLoadGame.setHitRect(btnX,       y2 + topPad,      imgW, contentH);
+    btnExit.setHitRect    (btnX,       y3 + exitTopPad,  imgW, contentH);
 }
 
 void HomeScreen::unloadAssets() {
@@ -55,10 +59,47 @@ void HomeScreen::unloadAssets() {
 }
 
 void HomeScreen::update(float dt) {
-    if (showLoadGameMsg) {
-        msgTimer -= dt;
-        if (msgTimer <= 0.0f || IsMouseButtonPressed(MOUSE_LEFT_BUTTON) || IsKeyPressed(KEY_ESCAPE)) {
-            showLoadGameMsg = false;
+    (void)dt;
+
+    // popup blocks everything else
+    if (showPopup) {
+        // text input for load path
+        int key = GetCharPressed();
+        while (key > 0) {
+            if (loadPathLen < 126 && key >= 32 && key <= 126) {
+                loadPathBuf[loadPathLen++] = (char)key;
+                loadPathBuf[loadPathLen]   = '\0';
+            }
+            key = GetCharPressed();
+        }
+        if (IsKeyPressed(KEY_BACKSPACE) && loadPathLen > 0) {
+            loadPathBuf[--loadPathLen] = '\0';
+            loadError.clear();
+        }
+
+        if (IsKeyPressed(KEY_ENTER) && loadPathLen > 0) {
+            std::string path(loadPathBuf);
+            // auto-prefix "save/" if no directory separator
+            if (path.find('/') == std::string::npos && path.find('\\') == std::string::npos)
+                path = "save/" + path;
+            // validate file exists
+            std::ifstream test(path);
+            if (test.good()) {
+                shouldLoadSave = true;
+                loadSavePath   = path;
+                nextScreen     = AppScreen::GAME;
+                shouldChangeScreen = true;
+                showPopup = false;
+                loadError.clear();
+            } else {
+                loadError = "File tidak ditemukan: " + path;
+            }
+            return;
+        }
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            showPopup = false;
+            loadPathLen = 0; loadPathBuf[0] = '\0';
+            loadError.clear();
         }
         return;
     }
@@ -67,8 +108,7 @@ void HomeScreen::update(float dt) {
         nextScreen = AppScreen::NEW_GAME;
         shouldChangeScreen = true;
     } else if (btnLoadGame.isClicked()) {
-        showLoadGameMsg = true;
-        msgTimer = 2.0f;
+        showPopup = true;
     } else if (btnExit.isClicked()) {
         shouldQuit = true;
     }
@@ -94,16 +134,79 @@ void HomeScreen::draw() {
     btnLoadGame.draw();
     btnExit.draw();
 
-    if (showLoadGameMsg) {
-        const char* msg = "Load Game - Coming Soon!";
-        int fontSize = static_cast<int>(32 * std::min(sw / 1280.0f, sh / 720.0f));
-        int msgW = MeasureText(msg, fontSize);
-        int boxW = msgW + 40;
-        int boxH = fontSize + 30;
-        int boxX = (sw - boxW) / 2;
-        int boxY = (sh - boxH) / 2;
-        DrawRectangle(boxX, boxY, boxW, boxH, Fade(BLACK, 0.8f));
-        DrawRectangleLines(boxX, boxY, boxW, boxH, GOLD);
-        DrawText(msg, boxX + 20, boxY + 15, fontSize, WHITE);
+    if (showPopup) {
+        DrawRectangle(0, 0, sw, sh, {0, 0, 0, 160});
+
+        float popW = 420.0f * globalScale, popH = 210.0f * globalScale;
+        float popX = (sw - popW) / 2.0f,  popY = (sh - popH) / 2.0f;
+
+        DrawRectangleRounded({popX, popY, popW, popH}, 0.15f, 8, {255, 243, 210, 255});
+        DrawRectangleRoundedLines({popX, popY, popW, popH}, 0.15f, 8, {80, 40, 35, 255});
+
+        int titleSz = (int)(20 * globalScale);
+        const char* title = "LOAD GAME";
+        int tw = MeasureText(title, titleSz);
+        DrawText(title, (int)(popX + (popW - tw) / 2.0f),
+                 (int)(popY + 18.0f * globalScale), titleSz, {80, 40, 35, 255});
+
+        int subSz = (int)(12 * globalScale);
+        DrawText("Path file save (contoh: save/game.json):",
+                 (int)(popX + 18.0f * globalScale),
+                 (int)(popY + 18.0f * globalScale + titleSz + 12.0f * globalScale),
+                 subSz, BLACK);
+
+        // text input field
+        float inY  = popY + 18.0f * globalScale + titleSz + 12.0f * globalScale + subSz + 8.0f * globalScale;
+        float inW  = popW - 36.0f * globalScale;
+        float inH  = 28.0f * globalScale;
+        float inX  = popX + 18.0f * globalScale;
+        DrawRectangleRec({inX, inY, inW, inH}, WHITE);
+        DrawRectangleLinesEx({inX, inY, inW, inH}, 1.5f, {80, 40, 35, 255});
+        std::string inp(loadPathBuf);
+        if ((int)GetTime() % 2 == 0) inp += "|";
+        DrawText(inp.c_str(), (int)(inX + 6), (int)(inY + (inH - subSz) / 2.0f), subSz, BLACK);
+
+        // error message
+        if (!loadError.empty()) {
+            int errSz = (int)(11 * globalScale);
+            int errW = MeasureText(loadError.c_str(), errSz);
+            DrawText(loadError.c_str(), (int)(popX + (popW - errW) / 2.0f),
+                     (int)(inY + inH + 4.0f * globalScale), errSz, RED);
+        }
+
+        // LOAD button
+        float btnW = 90.0f * globalScale, btnH = 28.0f * globalScale;
+        float btnX = popX + (popW - btnW) / 2.0f;
+        float btnY2 = inY + inH + 26.0f * globalScale;
+        bool hoverLoad = (GetMouseX() >= btnX && GetMouseX() <= btnX + btnW &&
+                          GetMouseY() >= btnY2 && GetMouseY() <= btnY2 + btnH);
+        DrawRectangleRec({btnX, btnY2, btnW, btnH},
+                         hoverLoad ? Color{148,73,68,255} : Color{120,50,45,255});
+        int lSz = (int)(13 * globalScale);
+        int lw  = MeasureText("LOAD", lSz);
+        DrawText("LOAD", (int)(btnX + (btnW - lw)/2.0f),
+                 (int)(btnY2 + (btnH - lSz)/2.0f), lSz, WHITE);
+        if (hoverLoad && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && loadPathLen > 0) {
+            std::string path(loadPathBuf);
+            if (path.find('/') == std::string::npos && path.find('\\') == std::string::npos)
+                path = "save/" + path;
+            std::ifstream test(path);
+            if (test.good()) {
+                shouldLoadSave = true;
+                loadSavePath   = path;
+                nextScreen     = AppScreen::GAME;
+                shouldChangeScreen = true;
+                showPopup = false;
+                loadError.clear();
+            } else {
+                loadError = "File tidak ditemukan: " + path;
+            }
+        }
+
+        int hintSz = (int)(10 * globalScale);
+        const char* hint = "ENTER untuk load  |  ESC untuk batal";
+        int hw = MeasureText(hint, hintSz);
+        DrawText(hint, (int)(popX + (popW - hw) / 2.0f),
+                 (int)(popY + popH - 16.0f * globalScale), hintSz, {120, 80, 75, 255});
     }
 }
