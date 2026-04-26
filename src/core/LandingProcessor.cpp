@@ -83,9 +83,9 @@ bool LandingProcessor::rollAndMove(Player &p, bool manual, int d1, int d2) {
     cout << p.getUsername() << " melempar dadu: " << state.dice.getDie1() << " + " << state.dice.getDie2()
          << " = " << state.dice.getTotal()
          << (state.dice.isDouble() ? " (GANDA)" : "") << "\n";
-    
+
     cout << "Pindah dari petak " << oldTile << " ke petak " << newTile << ".\n";
-    
+
     applyGoSalary(p, oldTile);
     return state.dice.isDouble();
 }
@@ -128,15 +128,15 @@ void LandingProcessor::applyGoSalary(Player &p, int oldTile) {
 void LandingProcessor::sendToJail(Player &p) {
     int jailIdx = 0;
     for (int i = 0; i < state.board.getTileCount(); i++) {
-        if (state.tiles[i]->getTileType() == "JAIL") { 
-            jailIdx = i; 
-            break; 
+        if (state.tiles[i]->getTileType() == "JAIL") {
+            jailIdx = i;
+            break;
         }
     }
 
     JailManager::goToJail(p, jailIdx);
     state.jail_turns[&p] = 0;
-    
+
     cout << p.getUsername() << " masuk penjara!\n";
     state.addLog(p, "MASUK_PENJARA", "");
 }
@@ -159,9 +159,6 @@ void LandingProcessor::handlePropertyLanding(Player &p, PropertyTile &prop) {
             state.addLog(p, "OTOMATIS",
                    prop.getTileName() + " (" + prop.getTileCode() + ") jadi milik " + p.getUsername());
         } else {
-            // STREET tanpa pemilik: otomatis tampilkan akta + tawaran beli
-            // (sesuai spesifikasi BELI). Untuk bot dan GUI, biarkan handler
-            // lain (BotController / GUI) yang memutuskan via cmdBeli.
             bool isBot = (dynamic_cast<Bot*>(&p) != nullptr);
 #ifdef GUI_MODE
             (void)isBot;
@@ -261,7 +258,7 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
         cout << "Petak Pajak Penghasilan (PPH)\n";
         cout << "  1. Bayar flat M" << state.config.getPphFlat() << "\n";
         cout << "  2. Bayar " << state.config.getPphPercentage() << "% dari total kekayaan\n";
-        
+
         int choice;
         if (isBot) {
             int flatAmt = TaxManager::calculatePPHFlat(state.config);
@@ -288,9 +285,9 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
         }
     } else if (taxType == "TAX_PBM") {
         amt = TaxManager::getPBMFlat(state.config);
-    } else { 
-        cout << "Bukan petak pajak.\n"; 
-        return; 
+    } else {
+        cout << "Bukan petak pajak.\n";
+        return;
     }
 
     if (p.getBalance() >= amt) {
@@ -418,16 +415,16 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
     }
 }
 
-void LandingProcessor::displayMessage(const std::string &msg) { 
-    cout << msg << "\n"; 
+void LandingProcessor::displayMessage(const std::string &msg) {
+    cout << msg << "\n";
 }
 
 void LandingProcessor::addLog(Player &p, const std::string &action, const std::string &detail) {
     state.addLog(p, action, detail);
 }
 
-int LandingProcessor::getDiceTotal() const { 
-    return state.dice.getTotal(); 
+int LandingProcessor::getDiceTotal() const {
+    return state.dice.getTotal();
 }
 
 std::vector<Player*> LandingProcessor::getActivePlayers() const {
