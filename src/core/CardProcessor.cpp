@@ -108,7 +108,12 @@ void CardProcessor::drawAndResolveCommunityChest(Player &p) {
                     cout << p.getUsername() << " tidak mampu membayar tagihan kartu Dana Umum! Bangkrut!\n";
                     bankruptcy.processBankruptcy(p);
                 } else {
-                    cout << "Saldo habis setelah efek kartu. Lakukan likuidasi aset.\n";
+                    cout << "Saldo negatif M" << debt << ". Likuidasi paksa untuk menutup tagihan kartu.\n";
+                    PropertyManager::autoLiquidate(p, state.board, debt);
+                    if (p.getBalance() < 0) {
+                        cout << p.getUsername() << " tetap tidak mampu membayar setelah likuidasi. Bangkrut!\n";
+                        bankruptcy.processBankruptcy(p);
+                    }
                 }
             }
         }
