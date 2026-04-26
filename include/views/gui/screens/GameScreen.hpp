@@ -38,6 +38,7 @@ private:
     Texture2D aktaTexture;
     Texture2D chanceCardTex;
     Texture2D communityCardTex;
+    Texture2D lelangBackTexture;
 
     // ── Static tile display data ──────────────────────────────────────────
     struct TileInfo {

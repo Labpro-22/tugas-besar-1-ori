@@ -645,6 +645,7 @@ void GameScreen::loadAssets() {
     aktaTexture      = LoadTexture("assets/Akta_background.png");
     chanceCardTex    = LoadTexture("assets/cards/Chance_card.png");
     communityCardTex = LoadTexture("assets/cards/Community_Card.png");
+    lelangBackTexture = LoadTexture("assets/Lelang_back.png");
 
     // load static tile data from config
     std::string line;
@@ -704,6 +705,7 @@ void GameScreen::unloadAssets() {
     UnloadTexture(aktaTexture);
     UnloadTexture(chanceCardTex);
     UnloadTexture(communityCardTex);
+    UnloadTexture(lelangBackTexture);
     btnPlay.unload(); btnAssets.unload(); btnPlayers.unload(); btnLog.unload();
     btnRollDice.unload(); btnEndTurn.unload();
     btnBuildHouse.unload(); btnMortgage.unload(); btnRedeem.unload();
@@ -2218,6 +2220,9 @@ void GameScreen::draw() {
         }
     }
 
+    // auction popup overlay (must be last so it covers everything)
+    if (auctionMode) drawAuctionUI(cardX, cardScale);
+
     // game over
     if (gameOverOverlay) drawGameOverOverlay();
 }
@@ -2274,11 +2279,6 @@ void GameScreen::drawPlayTab(float cardX, float cardScale) {
 
     float actionsLabelY = boxY + boxH + 10.0f * globalScale;
     int labelSz = (int)(13 * globalScale);
-
-    if (auctionMode) {
-        drawAuctionUI(cardX, cardScale);
-        return;
-    }
 
     if (debtMode) {
         drawDebtMode(cardX, cardScale);
@@ -2686,22 +2686,21 @@ void GameScreen::startAuction() {
     auctionProp = dynamic_cast<PropertyTile*>(gs->tiles[tileIdx]);
     if (!auctionProp) return;  // not a property tile
 
-    // build bidder order: start from player AFTER trigger in turn_order
+    // build bidder order: other players first (in turn order), trigger bids last
     auctionOrder.clear();
     int sz = (int)gs->turn_order.size();
     int trigIdx = 0;
     for (int i = 0; i < sz; i++) {
         if (gs->turn_order[i] == trigger) { trigIdx = i; break; }
     }
-    for (int i = 1; i <= sz; i++) {
+    for (int i = 1; i < sz; i++) {   // i < sz: exclude trigger's own position
         Player* pl = gs->turn_order[(trigIdx + i) % sz];
         if (pl->getStatus() != "BANKRUPT") auctionOrder.push_back(pl);
     }
-    // trigger can also bid (added last)
-    auctionOrder.push_back(trigger);
+    auctionOrder.push_back(trigger);  // trigger is last bidder (fair: others bid first)
 
     auctionIdx = 0;
-    auctionHighBid = 1;
+    auctionHighBid = 0;
     auctionHighBidder = nullptr;
     auctionPassed.assign(auctionOrder.size(), false);
     auctionInputLen = 0;
@@ -2740,13 +2739,27 @@ void GameScreen::updateAuction() {
 
     if (btnAuctionBid.isClicked() && auctionInputLen > 0) {
         int bid = std::stoi(std::string(auctionInputBuf));
-        if (bid > auctionHighBid && bid <= bidder->getBalance()) {
+        bool valid = (bid >= 0) && (bid <= bidder->getBalance());
+        if (auctionHighBidder != nullptr) {
+            valid = valid && (bid > auctionHighBid);
+        }
+        if (valid) {
             auctionHighBid = bid;
             auctionHighBidder = bidder;
             auctionInputLen = 0; auctionInputBuf[0] = '\0';
             advanceAuction();
         } else {
-            pushLog("Tawaran harus > " + std::to_string(auctionHighBid) + " dan <= saldo.");
+            std::string msg;
+            if (bid < 0) {
+                msg = "Tawaran tidak boleh negatif.";
+            } else if (bid > bidder->getBalance()) {
+                msg = "Tawaran melebihi saldo Anda.\nSaldo: M" + std::to_string(bidder->getBalance());
+            } else if (auctionHighBidder != nullptr && bid <= auctionHighBid) {
+                msg = "Tawaran harus lebih tinggi dari\nM" + std::to_string(auctionHighBid) + " (tawaran tertinggi saat ini).";
+            } else {
+                msg = "Tawaran tidak valid.";
+            }
+            showPopup = true; popupTitle = "TAWARAN TIDAK VALID"; popupMsg = msg;
         }
     }
 
@@ -2760,19 +2773,33 @@ void GameScreen::updateAuction() {
     int remaining = 0;
     for (bool p2 : auctionPassed) if (!p2) remaining++;
 
-    if (remaining == 0 || (remaining == 1 && auctionHighBidder != nullptr)) {
+    if (remaining == 0 || remaining == 1) {
+        // If 1 remaining but no one has bid yet, that last person wins with bid 0
+        if (remaining == 1 && auctionHighBidder == nullptr) {
+            for (int i = 0; i < (int)auctionOrder.size(); i++) {
+                if (!auctionPassed[i]) {
+                    auctionHighBidder = auctionOrder[i];
+                    auctionHighBid = 0;
+                    break;
+                }
+            }
+        }
+
         // auction ends — winner takes property
         if (auctionHighBidder) {
             auctionHighBidder->operator+=(-auctionHighBid);
             auctionHighBidder->addOwnedProperty(auctionProp);
             gs->recomputeMonopolyForGroup(auctionProp->getColorGroup());
-            pushLog(auctionHighBidder->getUsername() + " menang lelang M"
-                        + std::to_string(auctionHighBid));
             gs->addLog(*auctionHighBidder, "LELANG", auctionProp->getTileCode()
                        + " M" + std::to_string(auctionHighBid));
+            pushLog(auctionHighBidder->getUsername() + " menang lelang "
+                    + auctionProp->getTileName() + " M" + std::to_string(auctionHighBid));
         } else {
-            pushLog("Tidak ada pemenang lelang — properti kembali ke bank.");
+            pushLog("Tidak ada pemenang lelang — " + (auctionProp ? auctionProp->getTileName() : "properti") + " kembali ke bank.");
         }
+        drainAndStoreEvents();
+        gameLoop->checkWinGui();
+        if (gs->game_over) gameOverOverlay = true;
         auctionMode = false;
         auctionProp = nullptr;
     }
@@ -2780,73 +2807,113 @@ void GameScreen::updateAuction() {
 
 void GameScreen::drawAuctionUI(float /*cardX*/, float /*cardScale*/) {
     int sw = GetScreenWidth(), sh = GetScreenHeight();
-    DrawRectangle(0, 0, sw, sh, {0,0,0,180});
+    DrawRectangle(0, 0, sw, sh, {0, 0, 0, 180});
 
-    float pad  = 12.0f * globalScale;
-    float boxW = 420.0f * globalScale;
-    float boxH = 320.0f * globalScale;
-    float boxX = (sw - boxW) / 2.0f;
-    float boxY = (sh - boxH) / 2.0f;
+    // ── scale & draw the existing Lelang_back.png asset ───────────────────
+    float maxW = sw * 0.45f, maxH = sh * 0.85f;
+    float sc   = 1.0f;
+    if (lelangBackTexture.width > 0 && lelangBackTexture.height > 0)
+        sc = std::min(maxW / (float)lelangBackTexture.width,
+                      maxH / (float)lelangBackTexture.height);
+    float bgW = lelangBackTexture.width  * sc;
+    float bgH = lelangBackTexture.height * sc;
+    float bgX = (sw - bgW) / 2.0f;
+    float bgY = (sh - bgH) / 2.0f;
+    DrawTextureEx(lelangBackTexture, {bgX, bgY}, 0.0f, sc, WHITE);
 
-    DrawRectangleRounded({boxX, boxY, boxW, boxH}, 0.12f, 8, {255,243,210,255});
-    DrawRectangleRoundedLines({boxX, boxY, boxW, boxH}, 0.12f, 8, {80,40,35,255});
+    // ── overlay layout (matches texture structure) ────────────────────────
+    //  Zone A (top, above main divider ~22%): property name
+    //  Zone B (below main divider): Giliran → sub-divider → Harga Dasar
+    //                               → Tawaran tertinggi → player list
+    //                               → input → BID/PASS
 
-    int  titleSz = (int)(18 * globalScale);
-    int  subSz   = (int)(14 * globalScale);
-    float rowH   = (float)(subSz + 6) * globalScale;
-    float cy = boxY + 20.0f * globalScale;
-    float cx = boxX + 20.0f * globalScale;
+    int  nameSz   = (int)(32 * globalScale);  // property name
+    int  gilSz    = (int)(20 * globalScale);  // "Giliran:"
+    int  hargaSz  = (int)(13 * globalScale);  // "Harga Dasar" (small, centered)
+    int  tawaranSz= (int)(15 * globalScale);  // "Tawaran tertinggi" (bigger)
+    int  playerSz = (int)(12 * globalScale);  // player list (smallest)
+    float rowGap  = 5.0f * globalScale;
+    float pad     = bgW * 0.10f;
+    float leftX   = bgX + pad;
+    float centerX = bgX + bgW / 2.0f;
+    // main divider is at ~22% of texture height
+    float dividerY = bgY + bgH * 0.22f;
 
-    DrawText("LELANG", (int)cx, (int)cy, titleSz, {148,73,68,255});
-    cy += titleSz + 10;
+    // ── Zone A: Nama properti (above main divider, vertically centered) ───
+    std::string propName = auctionProp ? auctionProp->getTileName() : "Properti";
+    int pnW = MeasureText(propName.c_str(), nameSz);
+    float propNameY = bgY + (dividerY - bgY - nameSz + 10.0f) / 2.0f;
+    DrawText(propName.c_str(), (int)(centerX - pnW / 2.0f), (int)propNameY,
+             nameSz, {80,40,35,255});
+
+    // ── Zone B ────────────────────────────────────────────────────────────
+    float cy = dividerY + 12.0f * globalScale;
+
+    // "Giliran: player" — centered
+    if (!auctionOrder.empty() && auctionIdx < (int)auctionOrder.size()) {
+        std::string cur = "Giliran: " + auctionOrder[auctionIdx]->getUsername();
+        int cW = MeasureText(cur.c_str(), gilSz);
+        DrawText(cur.c_str(), (int)(centerX - cW / 2.0f), (int)cy, gilSz, {148,73,68,255});
+        cy += gilSz + rowGap;
+    }
+
+    cy += 18.0f * globalScale;
+
+    // "Harga Dasar" — small, centered
     if (auctionProp) {
-        std::string pname = auctionProp->getTileName();
-        DrawText(pname.c_str(), (int)cx, (int)cy, titleSz - 2, BLACK);
-        cy += titleSz + 6;
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "Harga Dasar: M%d", auctionProp->getBuyPrice());
+        int bW = MeasureText(buf, hargaSz);
+        DrawText(buf, (int)(centerX - bW / 2.0f), (int)cy, hargaSz, {120,80,75,255});
+        cy += hargaSz + rowGap * 2;
     }
 
-    char buf[64];
+    // "Tawaran tertinggi" — bigger font, left-aligned
+    char bidBuf[128];
     if (auctionHighBidder) {
-        std::snprintf(buf, sizeof(buf), "Tertinggi: M%d oleh %s",
+        std::snprintf(bidBuf, sizeof(bidBuf), "Tawaran tertinggi: M%d  (%s)",
                       auctionHighBid, auctionHighBidder->getUsername().c_str());
+        DrawText(bidBuf, (int)leftX, (int)cy, tawaranSz, {50,130,65,255});
     } else {
-        std::snprintf(buf, sizeof(buf), "Harga awal: M%d", auctionHighBid);
+        DrawText("Tawaran tertinggi: M0", (int)leftX, (int)cy, tawaranSz, {160,100,80,255});
     }
-    DrawText(buf, (int)cx, (int)cy, subSz, {80,40,35,255});
-    cy += rowH;
+    cy += tawaranSz + rowGap * 2;
 
-    // show each bidder status
+    // Player list — smaller font, left-aligned
     for (int i = 0; i < (int)auctionOrder.size(); i++) {
-        Color c = auctionPassed[i] ? Color{180,180,180,255} :
-                  (i == auctionIdx ? Color{70,160,90,255} : Color{40,40,40,255});
-        std::string s = (i == auctionIdx ? "> " : "  ")
-                       + auctionOrder[i]->getUsername()
-                       + (auctionPassed[i] ? " [PASS]" : "");
-        DrawText(s.c_str(), (int)cx, (int)cy, subSz, c);
-        cy += rowH;
+        std::string name = auctionOrder[i]->getUsername() + ":";
+        if (auctionPassed[i])                          name += "  [PASS]";
+        else if (auctionOrder[i] == auctionHighBidder) name += "  M" + std::to_string(auctionHighBid);
+        Color c = auctionPassed[i]  ? Color{170,170,170,255}
+                : (i == auctionIdx) ? Color{50,140,70,255}
+                                    : Color{50,30,25,255};
+        std::string prefix = (i == auctionIdx ? "> " : "   ");
+        DrawText((prefix + name).c_str(), (int)leftX, (int)cy, playerSz, c);
+        cy += playerSz + rowGap;
     }
-    cy += 8.0f * globalScale;
+    cy += rowGap * 2;
 
-    // bid input
-    DrawText("Tawaran:", (int)cx, (int)cy, subSz, BLACK);
-    float inX = cx + 90.0f * globalScale;
-    float inW = boxW * 0.4f, inH = 26.0f * globalScale;
-    DrawRectangleRec({inX, cy - 2, inW, inH}, {255,243,210,255});
-    DrawRectangleLinesEx({inX, cy - 2, inW, inH}, 1.5f, {80,40,35,255});
+    // Input field — centered
+    float inW = bgW * 0.55f, inH = 28.0f * globalScale;
+    float inX = centerX - inW / 2.0f;
+    DrawRectangleRec({inX, cy, inW, inH}, WHITE);
+    DrawRectangleLinesEx({inX, cy, inW, inH}, 1.5f, {80,40,35,255});
     std::string inp(auctionInputBuf);
-    if ((int)GetTime() % 2 == 0) inp += "|";
-    DrawText(inp.c_str(), (int)(inX + 4), (int)cy, subSz, BLACK);
-    cy += inH + 10.0f * globalScale;
+    if ((int)(GetTime() * 2) % 2 == 0) inp += "|";
+    int inpW = MeasureText(inp.c_str(), gilSz);
+    DrawText(inp.c_str(), (int)(inX + (inW - inpW) / 2.0f),
+             (int)(cy + (inH - gilSz) / 2.0f), gilSz, BLACK);
+    cy += inH + rowGap * 2;
 
-    // reposition buttons to center
-    float bidW = 90.0f * globalScale, bidH = 32.0f * globalScale;
-    float gap  = 12.0f * globalScale;
-    float totalW = bidW + gap + bidW;
-    float btnX = boxX + (boxW - totalW) / 2.0f;
-    btnAuctionBid.loadAsText("BID", btnX, cy, bidW, bidH,
-                             {244,206,43,255},{250,220,70,255},{80,40,35,255});
-    btnAuctionPass.loadAsText("PASS", btnX + bidW + gap, cy, bidW, bidH,
-                              {255,235,202,255},{255,240,215,255},{80,40,35,255});
+    // BID / PASS — centered
+    float btnW = bgW * 0.30f, btnH = 32.0f * globalScale;
+    float btnGap = bgW * 0.04f;
+    float bidX  = centerX - btnW - btnGap / 2.0f;
+    float passX = centerX + btnGap / 2.0f;
+    btnAuctionBid.loadAsText("BID",  bidX,  cy, btnW, btnH,
+                             {148,73,68,255},{170,85,78,255}, WHITE);
+    btnAuctionPass.loadAsText("PASS", passX, cy, btnW, btnH,
+                              {255,235,202,255},{255,220,180,255},{80,40,35,255});
     btnAuctionBid.draw();
     btnAuctionPass.draw();
 }
