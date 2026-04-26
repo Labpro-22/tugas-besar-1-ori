@@ -112,12 +112,20 @@ void LandingProcessor::applyLanding(Player &p) {
 
 void LandingProcessor::applyGoSalary(Player &p, int oldTile) {
     int newTile = p.getCurrTile();
+    int boardSize = state.board.getTileCount();
 
     if (state.tiles[newTile]->getTileType() == "GO_JAIL") {
         return;
     }
 
-    if (newTile < oldTile) {
+    // Forward distance: how many tiles forward from oldTile to newTile
+    // If forwardDist > half board, player moved BACKWARD (e.g. StepbackCard) → no salary
+    int forwardDist = (newTile - oldTile + boardSize) % boardSize;
+    if (forwardDist == 0 || forwardDist > boardSize / 2) {
+        return;  // backward or no movement — no GO salary
+    }
+
+    if (newTile < oldTile) {  // wrapped forward past tile 0 (GO)
         p += state.config.getGoSalary();
         cout << p.getUsername() << " melewati GO! Menerima gaji M"
              << state.config.getGoSalary() << ".\n";
@@ -356,6 +364,7 @@ void LandingProcessor::drawAndResolveChance(Player &p) {
         }
 
         if (p.getCurrTile() != before && p.getStatus() != "JAIL" && p.getStatus() != "BANKRUPT") {
+            applyGoSalary(p, before);
             applyLanding(p);
         }
         state.addLog(p, "KARTU", "Kesempatan: " + card->describe());

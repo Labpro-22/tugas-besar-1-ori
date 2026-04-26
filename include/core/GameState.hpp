@@ -48,6 +48,9 @@ public:
     std::vector<CommunityChestCard*> community_cards;
     std::vector<SpecialPowerCard*> skill_cards;
 
+    // GUI-mode bankruptcy: properties queued for auction after bankrupt-to-bank
+    std::vector<PropertyTile*> bankruptAuctionQueue;
+
     GameState(std::vector<Tile*> t, std::vector<Player*> p,
               std::vector<Player*> order, GameConfig cfg,
               int maxT, int currT, int activeId);

@@ -110,26 +110,28 @@ void BankruptcyProcessor::processBankruptcy(Player &p, Player *creditor) {
     } else {
         p.setStatus("BANKRUPT");
         int cash = p.getBalance();
-        
+
         if (cash > 0) {
             p += -cash;
             cout << "Uang sisa M" << cash << " diserahkan ke Bank.\n";
         }
-        
+
         auto props = p.getOwnedProperties();
         for (auto *prop : props) {
-            if (!prop) {
-                continue;
-            }
+            if (!prop) continue;
             prop->setLevel(0);
             prop->setMortgageStatus(false);
             prop->setMonopolized(false);
             prop->setFestivalState(1, 0);
             p.removeOwnedProperty(prop->getTileCode());
-            
+            state.recomputeMonopolyForGroup(prop->getColorGroup());
+
+#ifdef GUI_MODE
+            state.bankruptAuctionQueue.push_back(prop);
+#else
             cout << "→ Melelang " << prop->getTileName() << " (" << prop->getTileCode() << ")...\n";
             AuctionManager::interactiveAuction(nullptr, *prop, state.turn_order, &p);
-            state.recomputeMonopolyForGroup(prop->getColorGroup());
+#endif
         }
     }
     
