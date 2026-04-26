@@ -42,3 +42,10 @@ bin/
 
 # debug information files
 *.dwo
+
+# clangd
+.clangd
+
+# Save files
+save/*.txt
+bugs.md

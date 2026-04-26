@@ -1,8 +1,6 @@
-#include <iostream>
+#include "include/core/GameLoop.hpp"
 
 int main() {
-    
-    std::cout << "Hello world!\n";
-
+    GameLoop::run();
     return 0;
 }
