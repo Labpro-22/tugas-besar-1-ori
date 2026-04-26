@@ -151,9 +151,13 @@ void BotController::executeTurn(Player &p, int consecDoubles) {
     if (prop && !prop->getTileOwner() && !prop->isMortgage() && prop->getTileType() == "STREET") {
         if (Bot::shouldBuyStreet(p.getBalance(), prop->getBuyPrice())) {
             int price = prop->getBuyPrice();
+            if (p.getDiscountActive() > 0.0f) {
+                price = static_cast<int>(price * (1.0f - p.getDiscountActive()));
+            }
             p += -price;
             p.addOwnedProperty(prop);
             state.recomputeMonopolyForGroup(prop->getColorGroup());
+            if (p.getDiscountActive() > 0.0f) p.setDiscountActive(0.0f);
             
             cout << p.getUsername() << " (bot) membeli " << prop->getTileName() << " seharga M" << price << ".\n";
             state.addLog(p, "BELI", prop->getTileName() + " M" + to_string(price));

@@ -69,9 +69,9 @@ void GameLoop::initDecks() {
     int jailPos = 0;
 
     for (int i = 0; i < boardSize; i++) {
-        if (state->tiles[i]->getTileType() == "JAIL") { 
-            jailPos = i; 
-            break; 
+        if (state->tiles[i]->getTileType() == "JAIL") {
+            jailPos = i;
+            break;
         }
     }
 
@@ -149,10 +149,10 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::promptNewGame(int initBal
         string name;
         cout << "Username: ";
         cin >> name;
-        
+
         char type = readChar("Tipe (H=Human, B=Bot): ", "HB");
         Player *p = (type == 'B') ? static_cast<Player*>(new Bot(name)) : new Player(name);
-        
+
         p->operator+=(initBalance);
         ps.push_back(p);
     }
@@ -168,9 +168,9 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::promptNewGame(int initBal
 
     int activeId = 0;
     for (int i = 0; i < static_cast<int>(ps.size()); i++) {
-        if (ps[i] == order[0]) { 
-            activeId = i; 
-            break; 
+        if (ps[i] == order[0]) {
+            activeId = i;
+            break;
         }
     }
 
@@ -204,9 +204,9 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::buildPlayersFromState(con
     auto it = byName.find(sstate.active_turn_player);
     if (it != byName.end()) {
         for (int i = 0; i < static_cast<int>(ps.size()); i++) {
-            if (ps[i] == it->second) { 
-                activeId = i; 
-                break; 
+            if (ps[i] == it->second) {
+                activeId = i;
+                break;
             }
         }
     }
@@ -276,7 +276,7 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
 
         prop->setMortgageStatus(ps.status == "MORTGAGED");
         prop->setFestivalState(ps.festival_multiplier, ps.festival_duration);
-        
+
         int lvl = 0;
         if (ps.building_count == "H") {
             lvl = 5;
@@ -309,7 +309,7 @@ GameStates::SaveState GameLoop::buildSaveState() const {
         std::replace(ps.username.begin(), ps.username.end(), ' ', '_');
         ps.money = p->getBalance();
         ps.status = (p->getStatus() == "JAIL") ? "JAILED" : p->getStatus();
-        
+
         int tidx = p->getCurrTile();
         if (tidx >= 0 && tidx < static_cast<int>(state->tiles.size())) {
             ps.tile_code = state->tiles[tidx]->getTileCode();
@@ -318,7 +318,6 @@ GameStates::SaveState GameLoop::buildSaveState() const {
         for (auto *c : p->getHandCards()) {
             GameStates::CardState cs;
             std::string raw = c->getCardType();
-            // Spec format: "MoveCard", "ShieldCard", etc.
             if (raw == "MOVE")            cs.type = "MoveCard";
             else if (raw == "DISCOUNT")   cs.type = "DiscountCard";
             else if (raw == "SHIELD")     cs.type = "ShieldCard";
@@ -373,7 +372,7 @@ GameStates::SaveState GameLoop::buildSaveState() const {
         ps.status = prop->isMortgage() ? "MORTGAGED" : (prop->getTileOwner() ? "OWNED" : "BANK");
         ps.festival_multiplier = prop->getFestivalMultiplier();
         ps.festival_duration = prop->getFestivalDuration();
-        
+
         int lvl = prop->getLevel();
         ps.building_count = (lvl == 5) ? "H" : to_string(lvl);
         s.properties.push_back(ps);
@@ -381,9 +380,9 @@ GameStates::SaveState GameLoop::buildSaveState() const {
 
     for (const auto &le : state->transaction_log) {
         GameStates::LogState ls;
-        ls.turn = le.getTurn(); 
+        ls.turn = le.getTurn();
         ls.username = le.getUsername();
-        ls.action_type = le.getActionType(); 
+        ls.action_type = le.getActionType();
         ls.detail = le.getDescription();
         s.logs.push_back(ls);
     }
@@ -428,9 +427,9 @@ void GameLoop::nextTurn() {
 
     Player *next = state->turn_order[state->turn_order_idx];
     for (int i = 0; i < static_cast<int>(state->players.size()); i++) {
-        if (state->players[i] == next) { 
-            state->active_player_id = i; 
-            break; 
+        if (state->players[i] == next) {
+            state->active_player_id = i;
+            break;
         }
     }
 }
@@ -439,9 +438,9 @@ void GameLoop::nextTurn() {
 void GameLoop::checkWinCondition() {
     if (state->activePlayerCount() <= 1) {
         for (auto *p : state->players) {
-            if (p->getStatus() != "BANKRUPT") { 
-                state->events.processWin(*p); 
-                break; 
+            if (p->getStatus() != "BANKRUPT") {
+                state->events.processWin(*p);
+                break;
             }
         }
         state->events.flushEventsTo(cout);
@@ -468,6 +467,7 @@ void GameLoop::start() {
     landing.setRentCollector(&rentCollector);
     landing.setBankruptcyProcessor(&bankruptcy);
     CardProcessor cardProc(*state, bankruptcy);
+    cardProc.setLandingProcessor(&landing);
     CommandHandler cmdHandler(*state, landing, bankruptcy, cardProc, rentCollector, *this);
     BotController botCtrl(*state, landing, bankruptcy, cardProc, rentCollector);
 
@@ -476,9 +476,9 @@ void GameLoop::start() {
         if (state->game_over) break;
 
         Player *p = state->currentTurnPlayer();
-        if (p->getStatus() == "BANKRUPT") { 
-            nextTurn(); 
-            continue; 
+        if (p->getStatus() == "BANKRUPT") {
+            nextTurn();
+            continue;
         }
 
         if (dynamic_cast<Bot*>(p)) {
@@ -522,7 +522,7 @@ void GameLoop::run() {
         auto tiles = FileManager::loadBoard(configDir);
         auto [ps, order, activeId] = promptNewGame(initBalance);
         GameState *gs = new GameState(move(tiles), move(ps), move(order), cfg, maxTurn, 1, activeId);
-        
+
         GameLoop loop;
         loop.state = gs;
         loop.start();
@@ -541,7 +541,7 @@ void GameLoop::run() {
             auto [ps, order, activeId] = buildPlayersFromState(sstate);
             GameState *gs = new GameState(move(tiles), move(ps), move(order), cfg,
                                            sstate.max_turn, sstate.current_turn, activeId);
-            
+
             GameLoop loop;
             loop.state = gs;
             loop.applyPropertyState(sstate);

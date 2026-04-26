@@ -159,8 +159,6 @@ void FileManager::saveConfig(
         output << "\n";
     }
 
-    // Optional appendix (extension): bot flags + jail_turns. Spec parsers
-    // that stop after the log section will simply ignore this block.
     int botCount = 0;
     for (const auto &p : state.players) if (p.is_bot || p.jail_turns > 0) botCount++;
     if (botCount > 0) {
@@ -205,7 +203,6 @@ GameStates::SaveState FileManager::loadConfig(
     {
         line = readNextNonemptyLine(input, line_number);
         tokens = splitByWhiteSpace(line);
-        // Spec strict format: 4 tokens. Older saves (5-6 tokens) still accepted.
         if (tokens.size() < 4 || tokens.size() > 6) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS>'.");
 
         GameStates::PlayerState player;
@@ -293,7 +290,7 @@ GameStates::SaveState FileManager::loadConfig(
     line = readNextNonemptyLine(input, line_number);
     tokens = splitByWhiteSpace(line);
     if (tokens.size() != 1) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<JUMLAH_ENTRI_LOG>'.");
-    
+
     const int log_count = parseNonnegative(tokens[0], "JUMLAH_ENTRI_LOG", line_number);
 
     state.logs.clear();
@@ -311,8 +308,6 @@ GameStates::SaveState FileManager::loadConfig(
         state.logs.push_back(log);
     }
 
-    // Optional appendix (extension): bot flags + jail_turns. Absent in
-    // strict-spec saves; present in saves produced by this program.
     std::string maybe_marker;
     while (std::getline(input, maybe_marker)) {
         ++line_number;
