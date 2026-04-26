@@ -1843,6 +1843,9 @@ void GameScreen::draw() {
     // tile overlay
     if (selectedTileIdx >= 0) drawTileOverlay();
 
+    // auction overlay (drawn before popups so error popups appear on top)
+    if (auctionMode) drawAuctionUI(cardX, cardScale);
+
     // popup
     if (jailChoicePending) drawJailChoice();
     if (showCardPopup) drawCardPopup();
@@ -2219,9 +2222,6 @@ void GameScreen::draw() {
             btnPropAuction.draw();
         }
     }
-
-    // auction popup overlay (must be last so it covers everything)
-    if (auctionMode) drawAuctionUI(cardX, cardScale);
 
     // game over
     if (gameOverOverlay) drawGameOverOverlay();
@@ -2737,12 +2737,15 @@ void GameScreen::updateAuction() {
         auctionIdx = next;
     };
 
+    // block auction input while error popup is shown
+    if (showPopup) {
+        if (btnPopupOk.isClicked()) showPopup = false;
+        return;
+    }
+
     if (btnAuctionBid.isClicked() && auctionInputLen > 0) {
         int bid = std::stoi(std::string(auctionInputBuf));
-        bool valid = (bid >= 0) && (bid <= bidder->getBalance());
-        if (auctionHighBidder != nullptr) {
-            valid = valid && (bid > auctionHighBid);
-        }
+        bool valid = (bid > auctionHighBid) && (bid <= bidder->getBalance());
         if (valid) {
             auctionHighBid = bid;
             auctionHighBidder = bidder;
@@ -2750,14 +2753,10 @@ void GameScreen::updateAuction() {
             advanceAuction();
         } else {
             std::string msg;
-            if (bid < 0) {
-                msg = "Tawaran tidak boleh negatif.";
-            } else if (bid > bidder->getBalance()) {
+            if (bid > bidder->getBalance()) {
                 msg = "Tawaran melebihi saldo Anda.\nSaldo: M" + std::to_string(bidder->getBalance());
-            } else if (auctionHighBidder != nullptr && bid <= auctionHighBid) {
-                msg = "Tawaran harus lebih tinggi dari\nM" + std::to_string(auctionHighBid) + " (tawaran tertinggi saat ini).";
             } else {
-                msg = "Tawaran tidak valid.";
+                msg = "Tawaran harus lebih tinggi dari\nM" + std::to_string(auctionHighBid) + " (tawaran tertinggi saat ini).";
             }
             showPopup = true; popupTitle = "TAWARAN TIDAK VALID"; popupMsg = msg;
         }
