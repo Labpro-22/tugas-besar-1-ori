@@ -621,9 +621,9 @@ void GameScreen::computeLayout() {
 
     // ROLL / END / ATUR DADU — placed to the right of dice, centered in remaining space
     float btnGap      = 6.0f * globalScale;
-    float rollBtnW    = cardPanel.width * cardScale * 0.30f ;
-    float endBtnW     = cardPanel.width * cardScale * 0.16f ;
-    float actionBtnH  = 45.0 * 0.85f * 0.80f;
+    float rollBtnW    = cardPanel.width * cardScale * 0.300f;
+    float endBtnW     = cardPanel.width * cardScale * 0.160f;
+    float actionBtnH  = 35.0f * globalScale;
 
     float diceRight   = d2x + diceSz;
     float remainingX  = diceRight + 7.0f * globalScale;
@@ -638,7 +638,7 @@ void GameScreen::computeLayout() {
     }
     float rollBtnX    = remainingX + (remainingW - groupW) / 4.0f;
     float endBtnX     = rollBtnX + rollBtnW + btnGap;
-    float actionBtnY  = diceY + (diceSz - actionBtnH) / 2.0f + 23.0f * globalScale;
+    float actionBtnY  = diceY + (diceSz - actionBtnH) / 2.0f + 21.0f * globalScale;
 
     btnRollDice.loadAsText("ROLL", rollBtnX, actionBtnY, rollBtnW, actionBtnH,
                            {244,206,43,255},{250,220,70,255},{80,40,35,255});
@@ -648,7 +648,7 @@ void GameScreen::computeLayout() {
     // ── ATUR DADU button — placed below ROLL/END ──────────────────────────
     float setDiceBtnY  = actionBtnY + actionBtnH + 5.0f * globalScale;
     float setDiceBtnW  = groupW;
-    float setDiceBtnH  = actionBtnH * 0.75f;
+    float setDiceBtnH  = actionBtnH * 0.74f;
     btnSetDice.loadAsText("ATUR DADU", rollBtnX, setDiceBtnY, setDiceBtnW, setDiceBtnH,
                           {80,60,50,255},{110,80,70,255},{220,200,180,255});
 
@@ -1057,19 +1057,19 @@ void GameScreen::update(float dt) {
     if (setDiceMode) {
         // recompute popup button positions so isClicked() matches draw()
         int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
-        float popW = 300.0f * globalScale;
-        float popH = 190.0f * globalScale;
+        float popW = 306.0f * globalScale;
+        float popH = 192.0f * globalScale;
         float popX = (sw2 - popW) / 2.0f;
         float popY = (sh2 - popH) / 2.0f;
         float pmW  = 32.0f * globalScale;
-        float numW = 40.0f * globalScale;
+        float numW = 41.0f * globalScale;
         float cH2  = 34.0f * globalScale;
         float dGap = 24.0f * globalScale;
         float totalW = 2.0f*(pmW + numW + pmW) + dGap;
         float cX2  = popX + (popW - totalW) / 2.0f;
-        float cY2  = popY + 60.0f * globalScale;
-        float okW  = 90.0f * globalScale, okH = 30.0f * globalScale;
-        float xSz  = 22.0f * globalScale;
+        float cY2  = popY + 58.0f * globalScale;
+        float okW  = 92.0f * globalScale, okH = 28.0f * globalScale;
+        float xSz  = 20.0f * globalScale;
         btnConfirmDice.loadAsText("OK", popX + (popW - okW)/2.0f,
                                   cY2 + cH2 + 12.0f*globalScale, okW, okH,
                                   {70,140,80,255},{90,170,100,255},WHITE);
@@ -1945,8 +1945,8 @@ void GameScreen::draw() {
         int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
         DrawRectangle(0, 0, sw2, sh2, {0,0,0,150});
 
-        float popW = 300.0f * globalScale;
-        float popH = 190.0f * globalScale;
+        float popW = 306.0f * globalScale;
+        float popH = 192.0f * globalScale;
         float popX = (sw2 - popW) / 2.0f;
         float popY = (sh2 - popH) / 2.0f;
 
@@ -1961,12 +1961,12 @@ void GameScreen::draw() {
 
         // die counter row
         float pmW    = 32.0f * globalScale;
-        float numW   = 40.0f * globalScale;
+        float numW   = 41.0f * globalScale;
         float cH2    = 34.0f * globalScale;
         float dGap   = 24.0f * globalScale;
         float totalW = 2.0f*(pmW + numW + pmW) + dGap;
         float cX2    = popX + (popW - totalW) / 2.0f;
-        float cY2    = popY + 60.0f * globalScale;
+        float cY2    = popY + 58.0f * globalScale;
 
         int numSz = (int)(cH2 * 0.55f);
         int lblSz = (int)(12 * globalScale);
@@ -1999,14 +1999,14 @@ void GameScreen::draw() {
         btnD2Plus.draw();
 
         // confirm + hint
-        float okW = 90.0f * globalScale, okH = 30.0f * globalScale;
+        float okW = 92.0f * globalScale, okH = 28.0f * globalScale;
         btnConfirmDice.loadAsText("OK", popX + (popW - okW)/2.0f,
                                   cY2 + cH2 + 12.0f*globalScale, okW, okH,
                                   {70,140,80,255},{90,170,100,255},WHITE);
         btnConfirmDice.draw();
 
         // X close button — top-right of popup
-        float xSz = 22.0f * globalScale;
+        float xSz = 20.0f * globalScale;
         btnCloseDice.loadAsText("X", popX + popW - xSz - 6.0f*globalScale,
                                 popY + 6.0f*globalScale, xSz, xSz,
                                 {120,50,45,255},{160,70,65,255},WHITE);
