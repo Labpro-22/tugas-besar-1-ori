@@ -275,6 +275,13 @@ void GameScreen::executeRollResult() {
 
         // intercept unowned property landing for human players
         if (isBuyableProp && !currentPlayerIsBot()) {
+            // if player can't afford, skip popup and go straight to auction
+            if (p->getBalance() < prop->getBuyPrice()) {
+                startAuction();
+                isDouble = dbl;
+                finalizeRoll();
+                return;
+            }
             propertyLandingPending = true;
             propertyLandingTileIdx = tileIdx;
             propertyLandingDouble  = dbl;
@@ -2736,6 +2743,14 @@ void GameScreen::updateAuction() {
         }
         auctionIdx = next;
     };
+
+    // Auto-pass if player can't afford to beat current highest bid
+    if (bidder->getBalance() <= auctionHighBid) {
+        auctionPassed[auctionIdx] = true;
+        pushLog(bidder->getUsername() + " tidak sanggup menawar (saldo kurang dari M" + std::to_string(auctionHighBid) + ")");
+        advanceAuction();
+        return;
+    }
 
     // block auction input while error popup is shown
     if (showPopup) {
