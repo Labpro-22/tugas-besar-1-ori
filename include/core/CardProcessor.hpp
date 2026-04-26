@@ -8,14 +8,17 @@ class GameState;
 class Player;
 class PropertyTile;
 class BankruptcyProcessor;
+class LandingProcessor;
 
 class CardProcessor {
 private:
     GameState &state;
     BankruptcyProcessor &bankruptcy;
+    LandingProcessor *landing;
 
 public:
     CardProcessor(GameState &s, BankruptcyProcessor &bp);
+    void setLandingProcessor(LandingProcessor *lp);
 
     void drawAndResolveChance(Player &p);
     void drawAndResolveCommunityChest(Player &p);

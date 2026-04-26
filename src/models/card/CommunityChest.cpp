@@ -3,9 +3,11 @@
 
 HappyBirthdayCard::HappyBirthdayCard() {} 
 
-void HappyBirthdayCard::action(Player& player) 
-{ 
-    player += 100; 
+void HappyBirthdayCard::action(Player& player)
+{
+    // No-op: transfer dari setiap pemain ke receiver ditangani oleh
+    // CardManager::applyHappyBirthday agar tidak ter-double-count.
+    (void)player;
 }
 
 std::string HappyBirthdayCard::describe() const 
@@ -27,9 +29,11 @@ std::string SickCard::describe() const
 
 LegislativeCard::LegislativeCard() {}
 
-void LegislativeCard::action(Player& player) 
-{ 
-    player += -200; 
+void LegislativeCard::action(Player& player)
+{
+    // No-op: pembayaran dari payer ke setiap pemain ditangani oleh
+    // CardManager::applyLegislative agar tidak ter-double-count.
+    (void)player;
 }
 
 std::string LegislativeCard::describe() const 

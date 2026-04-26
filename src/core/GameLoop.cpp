@@ -69,9 +69,9 @@ void GameLoop::initDecks() {
     int jailPos = 0;
 
     for (int i = 0; i < boardSize; i++) {
-        if (state->tiles[i]->getTileType() == "JAIL") { 
-            jailPos = i; 
-            break; 
+        if (state->tiles[i]->getTileType() == "JAIL") {
+            jailPos = i;
+            break;
         }
     }
 
@@ -149,10 +149,10 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::promptNewGame(int initBal
         string name;
         cout << "Username: ";
         cin >> name;
-        
+
         char type = readChar("Tipe (H=Human, B=Bot): ", "HB");
         Player *p = (type == 'B') ? static_cast<Player*>(new Bot(name)) : new Player(name);
-        
+
         p->operator+=(initBalance);
         ps.push_back(p);
     }
@@ -168,9 +168,9 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::promptNewGame(int initBal
 
     int activeId = 0;
     for (int i = 0; i < static_cast<int>(ps.size()); i++) {
-        if (ps[i] == order[0]) { 
-            activeId = i; 
-            break; 
+        if (ps[i] == order[0]) {
+            activeId = i;
+            break;
         }
     }
 
@@ -183,7 +183,9 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::buildPlayersFromState(con
     map<string, Player*> byName;
 
     for (const auto &s : sstate.players) {
-        Player *p = s.is_bot ? static_cast<Player*>(new Bot(s.username)) : new Player(s.username);
+        std::string name = s.username;
+        std::replace(name.begin(), name.end(), '_', ' ');
+        Player *p = s.is_bot ? static_cast<Player*>(new Bot(name)) : new Player(name);
         p->operator+=(s.money);
         p->setStatus((s.status == "JAILED") ? "JAIL" : s.status);
         ps.push_back(p);
@@ -202,9 +204,9 @@ tuple<vector<Player*>, vector<Player*>, int> GameLoop::buildPlayersFromState(con
     auto it = byName.find(sstate.active_turn_player);
     if (it != byName.end()) {
         for (int i = 0; i < static_cast<int>(ps.size()); i++) {
-            if (ps[i] == it->second) { 
-                activeId = i; 
-                break; 
+            if (ps[i] == it->second) {
+                activeId = i;
+                break;
             }
         }
     }
@@ -220,7 +222,9 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
     }
 
     for (const auto &ps : sstate.players) {
-        auto it = byName.find(ps.username);
+        std::string lookupName = ps.username;
+        std::replace(lookupName.begin(), lookupName.end(), '_', ' ');
+        auto it = byName.find(lookupName);
         if (it == byName.end()) continue;
 
         int idx = state->board.getTileIndex(ps.tile_code);
@@ -233,28 +237,30 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
 
         for (const auto &cs : ps.hand_cards) {
             SpecialPowerCard *card = nullptr;
-            if (cs.type == "MOVE") {
+            const std::string &t = cs.type;
+            if (t == "MOVE" || t == "MoveCard") {
                 int val = cs.value.empty() ? 3 : std::stoi(cs.value);
                 card = new MoveCard(val, boardSize);
-            } else if (cs.type == "DISCOUNT") {
+            } else if (t == "DISCOUNT" || t == "DiscountCard") {
                 int val = cs.value.empty() ? 50 : std::stoi(cs.value);
                 card = new DiscountCard(val);
-            } else if (cs.type == "SHIELD") { 
+            } else if (t == "SHIELD" || t == "ShieldCard") {
                 card = new ShieldCard();
-            } else if (cs.type == "TELEPORT") { 
+            } else if (t == "TELEPORT" || t == "TeleportCard") {
                 card = new TeleportCard();
-            } else if (cs.type == "LASSO") { 
+            } else if (t == "LASSO" || t == "LassoCard") {
                 card = new LassoCard();
-            } else if (cs.type == "DEMOLITION") { 
-                card = new DemolitionCard(); 
+            } else if (t == "DEMOLITION" || t == "DemolitionCard") {
+                card = new DemolitionCard();
             }
 
             if (card) {
+                state->skill_cards.push_back(card);  // track ownership for ~GameState
                 it->second->addHandCard(card);
             }
         }
 
-        if (ps.status == "JAIL" && ps.jail_turns > 0) {
+        if (ps.status == "JAIL") {  // restore even if jail_turns == 0 (just entered)
             state->jail_turns[it->second] = ps.jail_turns;
         }
     }
@@ -270,7 +276,7 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
 
         prop->setMortgageStatus(ps.status == "MORTGAGED");
         prop->setFestivalState(ps.festival_multiplier, ps.festival_duration);
-        
+
         int lvl = 0;
         if (ps.building_count == "H") {
             lvl = 5;
@@ -280,7 +286,9 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
         prop->setLevel(lvl);
 
         if (ps.owner_username != "BANK") {
-            auto it = byName.find(ps.owner_username);
+            std::string ownerName = ps.owner_username;
+            std::replace(ownerName.begin(), ownerName.end(), '_', ' ');
+            auto it = byName.find(ownerName);
             if (it != byName.end()) {
                 it->second->addOwnedProperty(prop);
             }
@@ -298,9 +306,10 @@ GameStates::SaveState GameLoop::buildSaveState() const {
     for (auto *p : state->players) {
         GameStates::PlayerState ps;
         ps.username = p->getUsername();
+        std::replace(ps.username.begin(), ps.username.end(), ' ', '_');
         ps.money = p->getBalance();
         ps.status = (p->getStatus() == "JAIL") ? "JAILED" : p->getStatus();
-        
+
         int tidx = p->getCurrTile();
         if (tidx >= 0 && tidx < static_cast<int>(state->tiles.size())) {
             ps.tile_code = state->tiles[tidx]->getTileCode();
@@ -308,10 +317,17 @@ GameStates::SaveState GameLoop::buildSaveState() const {
 
         for (auto *c : p->getHandCards()) {
             GameStates::CardState cs;
-            cs.type = c->getCardType();
-            if (cs.type == "MOVE") {
+            std::string raw = c->getCardType();
+            if (raw == "MOVE")            cs.type = "MoveCard";
+            else if (raw == "DISCOUNT")   cs.type = "DiscountCard";
+            else if (raw == "SHIELD")     cs.type = "ShieldCard";
+            else if (raw == "TELEPORT")   cs.type = "TeleportCard";
+            else if (raw == "LASSO")      cs.type = "LassoCard";
+            else if (raw == "DEMOLITION") cs.type = "DemolitionCard";
+            else                          cs.type = raw;
+            if (raw == "MOVE") {
                 cs.value = std::to_string(static_cast<MoveCard*>(c)->getMoveValue());
-            } else if (cs.type == "DISCOUNT") {
+            } else if (raw == "DISCOUNT") {
                 cs.value = std::to_string(static_cast<DiscountCard*>(c)->getDiscountValue());
             }
             ps.hand_cards.push_back(cs);
@@ -324,11 +340,15 @@ GameStates::SaveState GameLoop::buildSaveState() const {
     }
 
     for (auto *p : state->turn_order) {
-        s.turn_order.push_back(p->getUsername());
+        std::string name = p->getUsername();
+        std::replace(name.begin(), name.end(), ' ', '_');
+        s.turn_order.push_back(name);
     }
 
     if (state->active_player_id >= 0 && state->active_player_id < static_cast<int>(state->players.size())) {
-        s.active_turn_player = state->players[state->active_player_id]->getUsername();
+        std::string name = state->players[state->active_player_id]->getUsername();
+        std::replace(name.begin(), name.end(), ' ', '_');
+        s.active_turn_player = name;
     }
 
     for (auto *t : state->tiles) {
@@ -337,12 +357,22 @@ GameStates::SaveState GameLoop::buildSaveState() const {
 
         GameStates::PropertyState ps;
         ps.tile_code = prop->getTileCode();
-        ps.type = prop->getTileType();
-        ps.owner_username = prop->getTileOwner() ? prop->getTileOwner()->getUsername() : "BANK";
+        {
+            std::string t = prop->getTileType();
+            std::string lower;
+            lower.reserve(t.size());
+            for (char c : t) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            ps.type = lower;
+        }
+        ps.owner_username = prop->getTileOwner() ? [&]() {
+            std::string name = prop->getTileOwner()->getUsername();
+            std::replace(name.begin(), name.end(), ' ', '_');
+            return name;
+        }() : "BANK";
         ps.status = prop->isMortgage() ? "MORTGAGED" : (prop->getTileOwner() ? "OWNED" : "BANK");
         ps.festival_multiplier = prop->getFestivalMultiplier();
         ps.festival_duration = prop->getFestivalDuration();
-        
+
         int lvl = prop->getLevel();
         ps.building_count = (lvl == 5) ? "H" : to_string(lvl);
         s.properties.push_back(ps);
@@ -350,9 +380,9 @@ GameStates::SaveState GameLoop::buildSaveState() const {
 
     for (const auto &le : state->transaction_log) {
         GameStates::LogState ls;
-        ls.turn = le.getTurn(); 
+        ls.turn = le.getTurn();
         ls.username = le.getUsername();
-        ls.action_type = le.getActionType(); 
+        ls.action_type = le.getActionType();
         ls.detail = le.getDescription();
         s.logs.push_back(ls);
     }
@@ -397,9 +427,9 @@ void GameLoop::nextTurn() {
 
     Player *next = state->turn_order[state->turn_order_idx];
     for (int i = 0; i < static_cast<int>(state->players.size()); i++) {
-        if (state->players[i] == next) { 
-            state->active_player_id = i; 
-            break; 
+        if (state->players[i] == next) {
+            state->active_player_id = i;
+            break;
         }
     }
 }
@@ -408,9 +438,9 @@ void GameLoop::nextTurn() {
 void GameLoop::checkWinCondition() {
     if (state->activePlayerCount() <= 1) {
         for (auto *p : state->players) {
-            if (p->getStatus() != "BANKRUPT") { 
-                state->events.processWin(*p); 
-                break; 
+            if (p->getStatus() != "BANKRUPT") {
+                state->events.processWin(*p);
+                break;
             }
         }
         state->events.flushEventsTo(cout);
@@ -437,6 +467,7 @@ void GameLoop::start() {
     landing.setRentCollector(&rentCollector);
     landing.setBankruptcyProcessor(&bankruptcy);
     CardProcessor cardProc(*state, bankruptcy);
+    cardProc.setLandingProcessor(&landing);
     CommandHandler cmdHandler(*state, landing, bankruptcy, cardProc, rentCollector, *this);
     BotController botCtrl(*state, landing, bankruptcy, cardProc, rentCollector);
 
@@ -445,9 +476,9 @@ void GameLoop::start() {
         if (state->game_over) break;
 
         Player *p = state->currentTurnPlayer();
-        if (p->getStatus() == "BANKRUPT") { 
-            nextTurn(); 
-            continue; 
+        if (p->getStatus() == "BANKRUPT") {
+            nextTurn();
+            continue;
         }
 
         if (dynamic_cast<Bot*>(p)) {
@@ -491,12 +522,11 @@ void GameLoop::run() {
         auto tiles = FileManager::loadBoard(configDir);
         auto [ps, order, activeId] = promptNewGame(initBalance);
         GameState *gs = new GameState(move(tiles), move(ps), move(order), cfg, maxTurn, 1, activeId);
-        
+
         GameLoop loop;
         loop.state = gs;
         loop.start();
-        
-        delete gs;
+        // ~GameLoop() deletes state
     } else {
         string savePath;
         cout << "Path file save: ";
@@ -511,17 +541,95 @@ void GameLoop::run() {
             auto [ps, order, activeId] = buildPlayersFromState(sstate);
             GameState *gs = new GameState(move(tiles), move(ps), move(order), cfg,
                                            sstate.max_turn, sstate.current_turn, activeId);
-            
+
             GameLoop loop;
             loop.state = gs;
             loop.applyPropertyState(sstate);
             loop.start();
-            
-            delete gs;
+            // ~GameLoop() deletes state
         } catch (const SaveLoadException &e) {
             cout << "Gagal memuat: " << e.what() << "\n";
         } catch (const exception &e) {
             cout << "Error: " << e.what() << "\n";
         }
     }
+}
+// ── Destructor ────────────────────────────────────────────────────────────────
+GameLoop::~GameLoop() {
+    delete state;
+    state = nullptr;
+}
+
+// ── getState ──────────────────────────────────────────────────────────────────
+GameState* GameLoop::getState() const { return state; }
+
+// ── advanceTurn ───────────────────────────────────────────────────────────────
+void GameLoop::advanceTurn() { nextTurn(); }
+
+// ── checkWinGui ───────────────────────────────────────────────────────────────
+void GameLoop::checkWinGui() { checkWinCondition(); }
+
+// ── buildForGui ───────────────────────────────────────────────────────────────
+GameLoop* GameLoop::buildForGui(GameConfig& cfg, const std::string& configDir) {
+    GameConfig ruleCfg = FileManager::loadGameConfig(configDir);
+    // copy player info from GUI config into the rule config
+    ruleCfg.playerCount = cfg.playerCount;
+    for (int i = 0; i < cfg.playerCount; i++) {
+        std::snprintf(ruleCfg.playerNames[i], GameConfig::MAX_NAME_LEN + 1,
+                      "%s", cfg.playerNames[i]);
+    }
+
+    auto tiles = FileManager::loadBoard(configDir);
+
+    vector<Player*> ps;
+    for (int i = 0; i < cfg.playerCount; i++) {
+        Player* p = new Player(string(cfg.playerNames[i]));
+        p->operator+=(ruleCfg.getInitialBalance());
+        ps.push_back(p);
+    }
+
+    vector<Player*> order = ps;
+    mt19937 rng(chrono::steady_clock::now().time_since_epoch().count());
+    shuffle(order.begin(), order.end(), rng);
+
+    int activeId = 0;
+    for (int i = 0; i < (int)ps.size(); i++) {
+        if (ps[i] == order[0]) { activeId = i; break; }
+    }
+
+    GameState* gs = new GameState(move(tiles), move(ps), move(order),
+                                   ruleCfg, ruleCfg.getMaxTurn(), 1, activeId);
+
+    GameLoop* loop = new GameLoop();
+    loop->state = gs;
+    loop->initDecks();
+    loop->distributeSkillCards();
+
+    return loop;
+}
+
+// ── saveToFile ────────────────────────────────────────────────────────────────
+void GameLoop::saveToFile(const std::string& filepath) {
+    if (!state) return;
+    auto sstate = buildSaveState();
+    GameStates::SavePermission perm;
+    perm.is_at_start_of_turn = true;  // GUI: allow save anytime
+    std::filesystem::create_directories(std::filesystem::path(filepath).parent_path());
+    FileManager::saveConfig(filepath, sstate, perm);
+}
+
+// ── buildFromSave ─────────────────────────────────────────────────────────────
+GameLoop* GameLoop::buildFromSave(const std::string& filepath, const std::string& configDir) {
+    auto sstate   = FileManager::loadConfig(filepath);
+    GameConfig cfg = FileManager::loadGameConfig(configDir);
+    auto tiles    = FileManager::loadBoard(configDir);
+    auto [ps, order, activeId] = buildPlayersFromState(sstate);
+
+    GameState* gs = new GameState(std::move(tiles), std::move(ps), std::move(order),
+                                   cfg, sstate.max_turn, sstate.current_turn, activeId);
+    GameLoop* loop = new GameLoop();
+    loop->state = gs;
+    loop->initDecks();
+    loop->applyPropertyState(sstate);
+    return loop;
 }

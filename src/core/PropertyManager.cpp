@@ -58,21 +58,31 @@ int PropertyManager::calculateMaxLiquidation(Player &player) {
     int total = player.getBalance();
 
     for (auto *p : player.getOwnedProperties()) {
-        if (!p) {
+        if (!p) continue;
+
+        if (p->isMortgage()) {
+            // Properti mortgaged harus ditebus dulu (bayar buyPrice) sebelum
+            // bisa dijual ke Bank (terima buyPrice). Net = 0.
             continue;
         }
 
-        if (p->isMortgage()) {
-            total += p->getBuyPrice();
-        } else {
-            total += p->getMortgageValue();
-            if (p->getTileType() == "STREET" && p->getLevel() > 0) {
-                int bldCost = (p->getLevel() >= 5) ? p->getHotelCost() : p->getHouseCost() * p->getLevel();
-                total += bldCost / 2;
-            }
+        // Non-mortgaged: max per properti = max(jual ke Bank, gadai).
+        //   Jual: terima buyPrice + setengah biaya bangunan (street saja).
+        //   Gadai: terima mortgageValue.
+        int sellValue = p->getBuyPrice();
+        if (p->getTileType() == "STREET" && p->getLevel() > 0) {
+            int bldCost = (p->getLevel() >= 5) ? p->getHotelCost() : p->getHouseCost() * p->getLevel();
+            sellValue += bldCost / 2;
         }
+        int mortgageOpt = p->getMortgageValue();
+        if (p->getTileType() == "STREET" && p->getLevel() > 0) {
+            // Untuk gadai, harus jual bangunan dulu (separuh), lalu terima mortgageValue
+            int bldCost = (p->getLevel() >= 5) ? p->getHotelCost() : p->getHouseCost() * p->getLevel();
+            mortgageOpt += bldCost / 2;
+        }
+        total += (sellValue > mortgageOpt) ? sellValue : mortgageOpt;
     }
-    
+
     return total;
 }
 
@@ -235,30 +245,53 @@ void PropertyManager::sellAllBuildingsInGroup(
 }
 
 bool PropertyManager::autoLiquidate(Player &p, Board &board, int targetAmount) {
-    int needed = targetAmount - p.getBalance();
-    if (needed <= 0) return true;
+    (void)board;
+    if (p.getBalance() >= targetAmount) return true;
 
+    // 1) Jual semua bangunan di street non-mortgaged (separuh harga bangunan).
     for (auto *prop : p.getOwnedProperties()) {
         if (!prop || prop->isMortgage()) continue;
-        
         if (prop->getTileType() == "STREET" && prop->getLevel() > 0) {
-            int refund = (prop->getLevel() >= 5) ? prop->getHotelCost() / 2 : (prop->getHouseCost() * prop->getLevel()) / 2;
+            int refund = (prop->getLevel() >= 5)
+                ? (prop->getHotelCost() / 2)
+                : (prop->getHouseCost() * prop->getLevel()) / 2;
             p += refund;
             prop->setLevel(0);
-            
-            needed = targetAmount - p.getBalance();
-            if (needed <= 0) return true;
+            if (p.getBalance() >= targetAmount) return true;
         }
     }
 
+    // 2) Gadai dulu (reversible). Kalau cukup, berhenti — properti tetap dipegang.
     for (auto *prop : p.getOwnedProperties()) {
         if (!prop || prop->isMortgage()) continue;
-        
         p += prop->getMortgageValue();
         prop->setMortgageStatus(true);
-        
-        needed = targetAmount - p.getBalance();
-        if (needed <= 0) return true;
+        if (p.getBalance() >= targetAmount) return true;
+    }
+
+    // 3) Masih kurang → tebus + jual ke Bank. Tebus = bayar buyPrice, jual = terima
+    //    buyPrice. Net 0, tapi kita harus undo gadai dari langkah 2 untuk supaya
+    //    penjualan dengan buyPrice + (separuh) bangunan = HASIL BERSIH lebih besar
+    //    dibanding mortgageValue yang sudah diambil. Selisih = buyPrice - mortgageValue.
+    //    Implementasi: ambil kembali properti dari status MORTGAGED dengan biaya
+    //    mortgageValue (kebalikan dari aksi gadai), lalu jual ke Bank di buyPrice.
+    auto props = p.getOwnedProperties();
+    for (auto *prop : props) {
+        if (!prop) continue;
+        int undoMortgage = prop->isMortgage() ? prop->getMortgageValue() : 0;
+        int sellPrice = prop->getBuyPrice();
+        // Tambahan bersih = sellPrice - undoMortgage. Hanya lakukan kalau positif.
+        int net = sellPrice - undoMortgage;
+        if (net <= 0) continue;
+        if (undoMortgage > 0) {
+            p += -undoMortgage;
+            prop->setMortgageStatus(false);
+        }
+        p += sellPrice;
+        prop->setMonopolized(false);
+        prop->setFestivalState(1, 0);
+        p.removeOwnedProperty(prop->getTileCode());
+        if (p.getBalance() >= targetAmount) return true;
     }
 
     return p.getBalance() >= targetAmount;

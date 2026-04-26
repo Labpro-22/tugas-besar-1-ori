@@ -122,7 +122,7 @@ void FileManager::saveConfig(
 
     for (const GameStates::PlayerState &player : state.players)
     {
-        output << player.username << " " << player.money << " " << player.tile_code << " " << player.status << " " << (player.is_bot ? "1" : "0") << " " << player.jail_turns << "\n";
+        output << player.username << " " << player.money << " " << player.tile_code << " " << player.status << "\n";
         output << player.hand_cards.size() << "\n";
         for (const GameStates::CardState &card : player.hand_cards)
             writeCardState(output, card);
@@ -158,6 +158,18 @@ void FileManager::saveConfig(
         if (!log.detail.empty()) output << " " << log.detail;
         output << "\n";
     }
+
+    int botCount = 0;
+    for (const auto &p : state.players) if (p.is_bot || p.jail_turns > 0) botCount++;
+    if (botCount > 0) {
+        output << "EXT_META\n";
+        output << botCount << "\n";
+        for (const auto &p : state.players) {
+            if (p.is_bot || p.jail_turns > 0) {
+                output << p.username << " " << (p.is_bot ? 1 : 0) << " " << p.jail_turns << "\n";
+            }
+        }
+    }
 }
 
 GameStates::SaveState FileManager::loadConfig(
@@ -191,8 +203,7 @@ GameStates::SaveState FileManager::loadConfig(
     {
         line = readNextNonemptyLine(input, line_number);
         tokens = splitByWhiteSpace(line);
-        // Support both old format (4 tokens) and new format (5-6 tokens with is_bot, jail_turns)
-        if (tokens.size() < 4 || tokens.size() > 6) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS> [IS_BOT] [JAIL_TURNS]'.");
+        if (tokens.size() < 4 || tokens.size() > 6) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<USERNAME> <UANG> <POSISI_PETAK> <STATUS>'.");
 
         GameStates::PlayerState player;
         player.username = tokens[0];
@@ -279,7 +290,7 @@ GameStates::SaveState FileManager::loadConfig(
     line = readNextNonemptyLine(input, line_number);
     tokens = splitByWhiteSpace(line);
     if (tokens.size() != 1) throw SaveLoadException("Format save invalid di baris " + std::to_string(line_number) + ": expected '<JUMLAH_ENTRI_LOG>'.");
-    
+
     const int log_count = parseNonnegative(tokens[0], "JUMLAH_ENTRI_LOG", line_number);
 
     state.logs.clear();
@@ -295,6 +306,40 @@ GameStates::SaveState FileManager::loadConfig(
         std::getline(iss, detail);
         log.detail = trim(detail);
         state.logs.push_back(log);
+    }
+
+    std::string maybe_marker;
+    while (std::getline(input, maybe_marker)) {
+        ++line_number;
+        std::string trimmed = trim(maybe_marker);
+        if (trimmed.empty()) continue;
+        if (trimmed != "EXT_META") break;
+
+        std::string countLine;
+        if (!std::getline(input, countLine)) break;
+        ++line_number;
+        std::vector<std::string> ctok = splitByWhiteSpace(countLine);
+        if (ctok.size() != 1) break;
+        int extCount = parseNonnegative(ctok[0], "EXT_COUNT", line_number);
+
+        for (int i = 0; i < extCount; ++i) {
+            std::string entry;
+            if (!std::getline(input, entry)) break;
+            ++line_number;
+            std::vector<std::string> et = splitByWhiteSpace(entry);
+            if (et.size() < 3) continue;
+            const std::string &uname = et[0];
+            bool is_bot = (et[1] == "1");
+            int jail_turns = parseIntegerToken(et[2], "JAIL_TURNS", line_number);
+            for (auto &p : state.players) {
+                if (p.username == uname) {
+                    p.is_bot = is_bot;
+                    p.jail_turns = jail_turns;
+                    break;
+                }
+            }
+        }
+        break;
     }
 
     return state;
@@ -438,7 +483,26 @@ std::vector<Tile*> FileManager::loadBoard(const std::string &configDir)
             auto it = byPos.find(i);
             if (it != byPos.end()) tiles.push_back(it->second);
         }
-        if (!tiles.empty()) return tiles;
+        if (!tiles.empty()) {
+            const int n = static_cast<int>(tiles.size());
+            if (n < 20 || n > 60) {
+                throw SaveLoadException("Konfigurasi papan invalid: jumlah petak harus 20-60 (ditemukan " + std::to_string(n) + ").");
+            }
+            int goCount = 0, jailCount = 0;
+            for (auto *t : tiles) {
+                if (!t) continue;
+                const std::string &type = t->getTileType();
+                if (type == "START") goCount++;
+                else if (type == "JAIL") jailCount++;
+            }
+            if (goCount != 1) {
+                throw SaveLoadException("Konfigurasi papan invalid: harus tepat 1 Petak Mulai (GO), ditemukan " + std::to_string(goCount) + ".");
+            }
+            if (jailCount != 1) {
+                throw SaveLoadException("Konfigurasi papan invalid: harus tepat 1 Petak Penjara, ditemukan " + std::to_string(jailCount) + ".");
+            }
+            return tiles;
+        }
     }
 
     // --- 2b. Fallback: board.txt (legacy) ---

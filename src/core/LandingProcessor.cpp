@@ -10,6 +10,11 @@
 #include "include/models/player/Player.hpp"
 #include "include/models/player/Bot.hpp"
 #include "include/models/tiles/PropertyTile.hpp"
+#ifdef GUI_MODE
+#include "include/utils/exceptions/UnablePayPPHTaxException.hpp"
+#include "include/utils/exceptions/UnablePayPBMTaxException.hpp"
+#include "include/utils/exceptions/InsufficientMoneyException.hpp"
+#endif
 #include "include/models/card/ChanceCard.hpp"
 #include "include/models/card/CommunityChest.hpp"
 #include "include/utils/exceptions/UnablePayBuildException.hpp"
@@ -78,9 +83,9 @@ bool LandingProcessor::rollAndMove(Player &p, bool manual, int d1, int d2) {
     cout << p.getUsername() << " melempar dadu: " << state.dice.getDie1() << " + " << state.dice.getDie2()
          << " = " << state.dice.getTotal()
          << (state.dice.isDouble() ? " (GANDA)" : "") << "\n";
-    
+
     cout << "Pindah dari petak " << oldTile << " ke petak " << newTile << ".\n";
-    
+
     applyGoSalary(p, oldTile);
     return state.dice.isDouble();
 }
@@ -123,15 +128,15 @@ void LandingProcessor::applyGoSalary(Player &p, int oldTile) {
 void LandingProcessor::sendToJail(Player &p) {
     int jailIdx = 0;
     for (int i = 0; i < state.board.getTileCount(); i++) {
-        if (state.tiles[i]->getTileType() == "JAIL") { 
-            jailIdx = i; 
-            break; 
+        if (state.tiles[i]->getTileType() == "JAIL") {
+            jailIdx = i;
+            break;
         }
     }
 
     JailManager::goToJail(p, jailIdx);
     state.jail_turns[&p] = 0;
-    
+
     cout << p.getUsername() << " masuk penjara!\n";
     state.addLog(p, "MASUK_PENJARA", "");
 }
@@ -149,15 +154,68 @@ void LandingProcessor::handlePropertyLanding(Player &p, PropertyTile &prop) {
         if (type == "RAILROAD" || type == "UTILITY") {
             p.addOwnedProperty(&prop);
             state.recomputeMonopolyForGroup(prop.getColorGroup());
+            if (p.getDiscountActive() > 0.0f) p.setDiscountActive(0.0f);
             cout << "Belum ada yang menginjaknya duluan, "
                  << prop.getTileName() << " kini menjadi milikmu!\n";
             state.addLog(p, "OTOMATIS",
                    prop.getTileName() + " (" + prop.getTileCode() + ") jadi milik " + p.getUsername());
         } else {
-            cout << "Properti belum dimiliki. Gunakan BELI untuk membeli, atau ketik SELESAI untuk masuk lelang otomatis.\n";
+            bool isBot = (dynamic_cast<Bot*>(&p) != nullptr);
+#ifdef GUI_MODE
+            (void)isBot;
+            cout << "Properti " << prop.getTileName() << " (" << prop.getTileCode()
+                 << ") tersedia. Gunakan BELI untuk membeli atau lewati untuk dilelang.\n";
+#else
+            if (isBot) {
+                cout << "Properti " << prop.getTileName() << " (" << prop.getTileCode()
+                     << ") tersedia. Bot akan memutuskan.\n";
+            } else {
+                state.formatter.printAkta(prop, state.board, state.config);
+                int price = prop.getBuyPrice();
+                if (p.getDiscountActive() > 0.0f) {
+                    price = static_cast<int>(price * (1.0f - p.getDiscountActive()));
+                }
+                cout << "Uang kamu saat ini: M" << p.getBalance() << "\n";
+
+                bool canAfford = (p.getBalance() >= price);
+                if (!canAfford) {
+                    cout << "Saldo tidak cukup untuk membeli (perlu M" << price << "). Properti masuk lelang.\n";
+                    if (bankruptcyProc) bankruptcyProc->handleAutoAuction(p);
+                } else {
+                    cout << "Apakah kamu ingin membeli properti ini seharga M" << price << "? (y/n): ";
+                    char ans = 0;
+                    while (true) {
+                        if (!(cin >> ans)) {
+                            cin.clear();
+                            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                            cout << "  Input tidak valid. (y/n): ";
+                            continue;
+                        }
+                        ans = static_cast<char>(toupper(static_cast<unsigned char>(ans)));
+                        if (ans == 'Y' || ans == 'N') break;
+                        cout << "  Input tidak valid. (y/n): ";
+                    }
+                    if (ans == 'Y') {
+                        p += -price;
+                        p.addOwnedProperty(&prop);
+                        state.recomputeMonopolyForGroup(prop.getColorGroup());
+                        if (p.getDiscountActive() > 0.0f) p.setDiscountActive(0.0f);
+                        cout << prop.getTileName() << " kini menjadi milikmu!\n";
+                        cout << "Uang tersisa: M" << p.getBalance() << "\n";
+                        state.addLog(p, "BELI", prop.getTileName() + " (" + prop.getTileCode() + ") M" + to_string(price));
+                    } else {
+                        cout << "Properti ini akan masuk ke sistem lelang...\n";
+                        if (bankruptcyProc) bankruptcyProc->handleAutoAuction(p);
+                    }
+                }
+            }
+#endif
         }
     } else if (owner == &p) {
         cout << "Ini properti Anda sendiri.\n";
+    } else if (owner->getStatus() == "JAIL") {
+        cout << owner->getUsername() << " sedang di penjara. Tidak ada sewa.\n";
+        state.addLog(p, "SEWA_BEBAS", prop.getTileCode() + " (pemilik di penjara)");
     } else {
         if (p.isShieldActive()) {
             cout << "[SHIELD ACTIVE]: Efek ShieldCard melindungi Anda!\n";
@@ -202,7 +260,7 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
         cout << "Petak Pajak Penghasilan (PPH)\n";
         cout << "  1. Bayar flat M" << state.config.getPphFlat() << "\n";
         cout << "  2. Bayar " << state.config.getPphPercentage() << "% dari total kekayaan\n";
-        
+
         int choice;
         if (isBot) {
             int flatAmt = TaxManager::calculatePPHFlat(state.config);
@@ -210,7 +268,15 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
             choice = (flatAmt <= pctAmt) ? 1 : 2;
             cout << "Bot memilih opsi " << choice << ".\n";
         } else {
+#ifdef GUI_MODE
+            // In GUI mode, PPH choice is handled by the GUI before applyLanding is called.
+            // If we somehow reach here, default to the cheaper option.
+            int flatAmt2 = TaxManager::calculatePPHFlat(state.config);
+            int pctAmt2  = TaxManager::calculatePPHPct(p, state.config);
+            choice = (flatAmt2 <= pctAmt2) ? 1 : 2;
+#else
             choice = readInt("Pilihan (1/2): ", 1, 2);
+#endif
         }
 
         if (choice == 1) {
@@ -221,9 +287,9 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
         }
     } else if (taxType == "TAX_PBM") {
         amt = TaxManager::getPBMFlat(state.config);
-    } else { 
-        cout << "Bukan petak pajak.\n"; 
-        return; 
+    } else {
+        cout << "Bukan petak pajak.\n";
+        return;
     }
 
     if (p.getBalance() >= amt) {
@@ -232,7 +298,7 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
         state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
     } else {
         int maxLiq = PropertyManager::calculateMaxLiquidation(p);
-        if (p.getBalance() + maxLiq < amt) {
+        if (maxLiq < amt) {
             if (isBot || !bankruptcyProc) {
                 cout << "Tidak cukup aset untuk membayar pajak M" << amt << ". Bangkrut ke Bank!\n";
                 if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
@@ -245,6 +311,11 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
             cout << p.getUsername() << " membayar pajak M" << amt << ".\n";
             state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
         } else {
+#ifdef GUI_MODE
+            // Throw so GUI can show debt recovery UI instead of blocking on stdin
+            if (taxType == "TAX_PPH") throw UnablePayPPHTaxException("Pajak PPH M" + to_string(amt));
+            if (taxType == "TAX_PBM") throw UnablePayPBMTaxException("Pajak PBM M" + to_string(amt));
+#else
             if (rentCollector) {
                 rentCollector->recoverForDebt(p, amt, nullptr, "pajak");
             }
@@ -253,6 +324,7 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
                 cout << p.getUsername() << " membayar pajak M" << amt << ".\n";
                 state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
             }
+#endif
         }
     }
 }
@@ -286,6 +358,17 @@ void LandingProcessor::drawAndResolveChance(Player &p) {
             applyLanding(p);
         }
         state.addLog(p, "KARTU", "Kesempatan: " + card->describe());
+
+#ifdef GUI_MODE
+        // If card deducted enough to push balance negative but player can still recover
+        if (p.getBalance() < 0 && p.getStatus() != "BANKRUPT") {
+            int maxLiq = PropertyManager::calculateMaxLiquidation(p);
+            if (maxLiq >= 0)
+                throw InsufficientMoneyException("CARD:" + to_string(-p.getBalance()));
+            else if (bankruptcyProc)
+                bankruptcyProc->processBankruptcy(p);
+        }
+#endif
     }
 }
 
@@ -309,11 +392,23 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
             CardManager::resolveCardEffect(*card, p, state.players);
             if (p.getBalance() < 0) {
                 int maxLiq = PropertyManager::calculateMaxLiquidation(p);
-                if (maxLiq + p.getBalance() < 0) {
+                if (maxLiq < 0) {
                     cout << p.getUsername() << " tidak mampu membayar tagihan kartu Dana Umum! Bangkrut!\n";
                     if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
                 } else {
-                    cout << "Saldo habis setelah efek kartu. Likuidasi mungkin diperlukan.\n";
+#ifdef GUI_MODE
+                    state.community_deck.discardCard(card);
+                    state.addLog(p, "KARTU", "Dana Umum: " + card->describe());
+                    throw InsufficientMoneyException("CARD:" + to_string(-p.getBalance()));
+#else
+                    int debt = -p.getBalance();
+                    cout << "Saldo negatif M" << debt << ". Likuidasi paksa untuk menutup tagihan kartu.\n";
+                    PropertyManager::autoLiquidate(p, state.board, 0);
+                    if (p.getBalance() < 0) {
+                        cout << p.getUsername() << " tetap tidak mampu membayar setelah likuidasi. Bangkrut!\n";
+                        if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
+                    }
+#endif
                 }
             }
         }
@@ -322,16 +417,16 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
     }
 }
 
-void LandingProcessor::displayMessage(const std::string &msg) { 
-    cout << msg << "\n"; 
+void LandingProcessor::displayMessage(const std::string &msg) {
+    cout << msg << "\n";
 }
 
 void LandingProcessor::addLog(Player &p, const std::string &action, const std::string &detail) {
     state.addLog(p, action, detail);
 }
 
-int LandingProcessor::getDiceTotal() const { 
-    return state.dice.getTotal(); 
+int LandingProcessor::getDiceTotal() const {
+    return state.dice.getTotal();
 }
 
 std::vector<Player*> LandingProcessor::getActivePlayers() const {
