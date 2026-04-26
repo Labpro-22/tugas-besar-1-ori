@@ -2358,7 +2358,7 @@ void GameScreen::drawAssetsTab(float cardX, float cardScale) {
             // text — vertically centered in the strip
             float textX = stripX + stripW + 6.0f * globalScale;
             float textY = stripY + (stripH - rowSz) / 2.0f;
-            std::string info = prop->getTileCode() + " " + prop->getTileName();
+            std::string info = "[" + prop->getTileCode() + "] " + prop->getTileName();
             if (prop->isMortgage()) info += " [GADAI]";
             int lvl = prop->getLevel();
             if (lvl > 0 && lvl < 5) {
@@ -3004,13 +3004,18 @@ void GameScreen::drawSkillCardSection(float cardX, float cardScale, float startY
         auto* card = p->getHandCard(i);
         if (!card) continue;
         std::string label = card->getCardType() + " CARD";
-        Color bg    = used ? Color{210,210,210,255} : Color{255,235,202,255};
-        Color hover = used ? Color{210,210,210,255} : Color{255,220,180,255};
-        Color fg    = used ? Color{170,170,170,255} : Color{80,40,35,255};
+        bool usable = !used && hasRolled;
+        if (debtMode) {
+            std::string t = card->getCardType();
+            usable = usable && (t == "SHIELD" || t == "DISCOUNT");
+        }
+        Color bg    = usable ? Color{255,235,202,255} : Color{210,210,210,255};
+        Color hover = usable ? Color{255,220,180,255} : Color{210,210,210,255};
+        Color fg    = usable ? Color{80,40,35,255}   : Color{170,170,170,255};
         btnSkillCards[i].loadAsText(label, sectX, sectY, sectW, btnH, bg, hover, fg);
-        btnSkillCards[i].setDisabled(used || !hasRolled);
+        btnSkillCards[i].setDisabled(!usable);
         btnSkillCards[i].draw();
-        Color border = (used || !hasRolled) ? Color{170,170,170,180} : Color{80,40,35,255};
+        Color border = usable ? Color{80,40,35,255} : Color{170,170,170,180};
         DrawRectangleLinesEx({sectX, sectY, sectW, btnH}, 1.0f, border);
         sectY += btnH + btnGap;
     }
@@ -3257,19 +3262,7 @@ void GameScreen::drawDebtMode(float cardX, float cardScale) {
                           btnDebtGadai.getWidth(), btnDebtGadai.getHeight()},
                          1.5f, {150,100,30,255});
 
-    // hint for shield card
-    if (debtLanding && p && !p->isSkillUsed() && p->getHandSize() > 0) {
-        bool hasShield = false;
-        for (int i = 0; i < p->getHandSize(); i++) {
-            auto* c = p->getHandCard(i);
-            if (c && c->getCardType() == "SHIELD") { hasShield = true; break; }
-        }
-        if (hasShield) {
-            int shSz = (int)(11 * globalScale);
-            DrawText("(Gunakan SHIELD dari Kartu Kemampuan untuk batalkan sewa)",
-                     (int)boxX, (int)(labY + labSz + 4.0f*globalScale), shSz, {70,120,180,255});
-        }
-    }
+    // no extra hint text — skill cards are shown in the section below
 
     // force / bankrupt button — only if no properties left
     bool debtResolved = (debtAmount == 0) ? (p && p->getBalance() >= 0)
