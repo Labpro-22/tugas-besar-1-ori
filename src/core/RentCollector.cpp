@@ -104,12 +104,27 @@ void RentCollector::recoverForRent(Player &p, PropertyTile &prop) {
         cout << "Saldo: M" << p.getBalance() << " / Butuh: M" << rent << "\n";
 
         if (maxCanPay < rent) {
+            cout << "Tidak cukup aset untuk membayar sewa. Bangkrut!\n";
             bankruptcy.processBankruptcy(p, owner);
             return;
         }
 
+        auto ownedProps = p.getOwnedProperties();
+        if (ownedProps.empty()) {
+            cout << "Tidak punya properti untuk dilikuidasi. Bangkrut!\n";
+            bankruptcy.processBankruptcy(p, owner);
+            return;
+        }
+
+        cout << "Properti Anda:\n";
+        for (auto *op : ownedProps) {
+            if (!op) continue;
+            string status = op->isMortgage() ? " [GADAI]" : "";
+            cout << "  [" << op->getTileCode() << "] " << op->getTileName() << status << "\n";
+        }
+
         cout << "Gadaikan atau lelang properti Anda dulu:\n";
-        cout << "  GADAI <kode> / LELANG <kode> / CETAK_PROPERTI / CETAK_AKTA <kode>\n> ";
+        cout << "  GADAI <kode> / LELANG <kode> / CETAK_PROPERTI / CETAK_AKTA <kode> / MENYERAH\n> ";
         
         string cmd;
         if (!(cin >> cmd)) { 
@@ -138,6 +153,10 @@ void RentCollector::recoverForRent(Player &p, PropertyTile &prop) {
                     state.formatter.printAkta(*pr, state.board, state.config);
                 }
             }
+        } else if (cmd == "MENYERAH") {
+            cout << p.getUsername() << " menyerah. Bangkrut!\n";
+            bankruptcy.processBankruptcy(p, owner);
+            return;
         } else { 
             cout << "Perintah tidak dikenali.\n"; 
         }
@@ -167,11 +186,27 @@ void RentCollector::recoverForDebt(Player &p, int amount, Player *creditor, cons
         cout << "Saldo: M" << p.getBalance() << " / Butuh: M" << amount << " (" << reason << ")\n";
 
         if (maxCanPay < amount) {
+            cout << "Tidak cukup aset untuk membayar " << reason << ". Bangkrut!\n";
             bankruptcy.processBankruptcy(p, creditor);
             return;
         }
 
-        cout << "Gadaikan atau lelang properti Anda dulu:\n> ";
+        auto ownedProps = p.getOwnedProperties();
+        if (ownedProps.empty()) {
+            cout << "Tidak punya properti untuk dilikuidasi. Bangkrut!\n";
+            bankruptcy.processBankruptcy(p, creditor);
+            return;
+        }
+
+        cout << "Properti Anda:\n";
+        for (auto *op : ownedProps) {
+            if (!op) continue;
+            string status = op->isMortgage() ? " [GADAI]" : "";
+            cout << "  [" << op->getTileCode() << "] " << op->getTileName() << status << "\n";
+        }
+
+        cout << "Gadaikan atau lelang properti Anda dulu:\n";
+        cout << "  GADAI <kode> / LELANG <kode> / CETAK_PROPERTI / CETAK_AKTA <kode> / MENYERAH\n> ";
         
         string cmd;
         if (!(cin >> cmd)) { 
@@ -191,6 +226,19 @@ void RentCollector::recoverForDebt(Player &p, int amount, Player *creditor, cons
             bankruptcy.cmdLelang(p, code); 
         } else if (cmd == "CETAK_PROPERTI") { 
             state.formatter.printProperty(p, state.board); 
+        } else if (cmd == "CETAK_AKTA") {
+            string code; cin >> code;
+            Tile *t = state.board.getTileByCode(code);
+            if (t) {
+                auto *pr = dynamic_cast<PropertyTile*>(t);
+                if (pr) {
+                    state.formatter.printAkta(*pr, state.board, state.config);
+                }
+            }
+        } else if (cmd == "MENYERAH") {
+            cout << p.getUsername() << " menyerah. Bangkrut!\n";
+            bankruptcy.processBankruptcy(p, creditor);
+            return;
         } else { 
             cout << "Perintah tidak dikenali.\n"; 
         }
