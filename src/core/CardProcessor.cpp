@@ -52,7 +52,11 @@ namespace {
 }
 
 CardProcessor::CardProcessor(GameState &s, BankruptcyProcessor &bp)
-    : state(s), bankruptcy(bp) {}
+    : state(s), bankruptcy(bp), landing(nullptr) {}
+
+void CardProcessor::setLandingProcessor(LandingProcessor *lp) {
+    landing = lp;
+}
 
 void CardProcessor::drawAndResolveChance(Player &p) {
     ChanceCard *card = state.chance_deck.draw();
@@ -188,7 +192,13 @@ void CardProcessor::cmdGunakanKemampuan(Player &p, int index) {
         }
         int target = readInt("Pilih nomor petak tujuan: ", 0, state.board.getTileCount() - 1);
         p.removeHandCard(index);
+        bool wasInJail = (p.getStatus() == "JAIL");
         SkillCardManager::applyTeleport(p, target, state.board.getTileCount());
+        if (wasInJail) {
+            p.setStatus("ACTIVE");
+            state.jail_turns.erase(&p);
+            cout << p.getUsername() << " keluar dari penjara via TeleportCard.\n";
+        }
         p.setSkillUsed(true);
         cout << p.getUsername() << " berteleportasi ke [" << state.tiles[target]->getTileCode() << "] " << state.tiles[target]->getTileName() << "!\n";
         state.addLog(p, "GUNAKAN_KEMAMPUAN", "TeleportCard -> " + string(state.tiles[target]->getTileCode()));
@@ -212,10 +222,20 @@ void CardProcessor::cmdGunakanKemampuan(Player &p, int index) {
         p.removeHandCard(index);
         Player *targetPlayer = others[target - 1];
         int myTile = p.getCurrTile();
+        int targetOldTile = targetPlayer->getCurrTile();
         SkillCardManager::applyLasso(p, *targetPlayer, myTile);
         p.setSkillUsed(true);
+        if (targetPlayer->getStatus() == "JAIL") {
+            targetPlayer->setStatus("ACTIVE");
+            state.jail_turns.erase(targetPlayer);
+            cout << targetPlayer->getUsername() << " keluar dari penjara karena ditarik LassoCard.\n";
+        }
         cout << targetPlayer->getUsername() << " ditarik ke petak " << myTile << "!\n";
         state.addLog(p, "GUNAKAN_KEMAMPUAN", "LassoCard -> " + targetPlayer->getUsername());
+        landing->applyGoSalary(*targetPlayer, targetOldTile);
+        if (targetPlayer->getStatus() != "JAIL" && targetPlayer->getStatus() != "BANKRUPT") {
+            landing->applyLanding(*targetPlayer);
+        }
     } else if (cardType == "DEMOLITION") {
         vector<pair<Player*, vector<PropertyTile*>>> opponentsWithBuildings;
         for (auto *pl : state.players) {

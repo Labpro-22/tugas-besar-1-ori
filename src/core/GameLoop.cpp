@@ -467,6 +467,7 @@ void GameLoop::start() {
     landing.setRentCollector(&rentCollector);
     landing.setBankruptcyProcessor(&bankruptcy);
     CardProcessor cardProc(*state, bankruptcy);
+    cardProc.setLandingProcessor(&landing);
     CommandHandler cmdHandler(*state, landing, bankruptcy, cardProc, rentCollector, *this);
     BotController botCtrl(*state, landing, bankruptcy, cardProc, rentCollector);
 

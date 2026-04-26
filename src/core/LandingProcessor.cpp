@@ -154,6 +154,7 @@ void LandingProcessor::handlePropertyLanding(Player &p, PropertyTile &prop) {
         if (type == "RAILROAD" || type == "UTILITY") {
             p.addOwnedProperty(&prop);
             state.recomputeMonopolyForGroup(prop.getColorGroup());
+            if (p.getDiscountActive() > 0.0f) p.setDiscountActive(0.0f);
             cout << "Belum ada yang menginjaknya duluan, "
                  << prop.getTileName() << " kini menjadi milikmu!\n";
             state.addLog(p, "OTOMATIS",
@@ -198,6 +199,7 @@ void LandingProcessor::handlePropertyLanding(Player &p, PropertyTile &prop) {
                         p += -price;
                         p.addOwnedProperty(&prop);
                         state.recomputeMonopolyForGroup(prop.getColorGroup());
+                        if (p.getDiscountActive() > 0.0f) p.setDiscountActive(0.0f);
                         cout << prop.getTileName() << " kini menjadi milikmu!\n";
                         cout << "Uang tersisa: M" << p.getBalance() << "\n";
                         state.addLog(p, "BELI", prop.getTileName() + " (" + prop.getTileCode() + ") M" + to_string(price));

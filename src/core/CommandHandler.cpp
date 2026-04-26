@@ -75,6 +75,7 @@ void CommandHandler::cmdBeli(Player &p) {
     p += -price;
     p.addOwnedProperty(prop);
     state.recomputeMonopolyForGroup(prop->getColorGroup());
+    if (p.getDiscountActive() > 0.0f) p.setDiscountActive(0.0f);
 
     cout << p.getUsername() << " membeli " << t->getTileName() << " seharga M" << price << ".\n";
     state.addLog(p, "BELI", t->getTileName() + " (" + t->getTileCode() + ") M" + to_string(price));
@@ -118,11 +119,16 @@ void CommandHandler::processJailHuman(
     } else {
         int jailTile = p.getCurrTile();
         auto jr = JailManager::rollInJail(p, state.dice, state.jail_turns[&p], state.board.getTileCount(), manual, d1, d2);
-        
+
+        cout << p.getUsername() << " melempar dadu di penjara: "
+             << state.dice.getDie1() << " + " << state.dice.getDie2()
+             << " = " << state.dice.getTotal()
+             << (jr.isDouble ? " (GANDA)" : "") << "\n";
+
         string diceDetail = "Lempar: " + to_string(state.dice.getDie1()) + "+"
                           + to_string(state.dice.getDie2()) + "=" + to_string(state.dice.getTotal())
                           + (jr.isDouble ? " (double)" : "") + " [PENJARA]";
-        
+
         state.addLog(p, "DADU", diceDetail);
 
         if (jr.escaped) {
@@ -323,6 +329,17 @@ void CommandHandler::executeTurn(Player &p) {
                     has_executed_action = true;
                     if (p.getCurrTile() != tileBefore) {
                         moved_via_card = true;
+                        if (state.tiles[p.getCurrTile()]->getTileType() != "GO_JAIL") {
+                            if (state.tiles[p.getCurrTile()]->getTileType() == "START" || p.getCurrTile() < tileBefore) {
+                                p += state.config.getGoSalary();
+                                cout << p.getUsername() << " melewati GO! Menerima gaji M"
+                                     << state.config.getGoSalary() << ".\n";
+                                state.addLog(p, "GAJI_GO", "M" + to_string(state.config.getGoSalary()));
+                            }
+                        }
+                        if (p.getStatus() != "JAIL" && p.getStatus() != "BANKRUPT") {
+                            landing.applyLanding(p);
+                        }
                     }
                 }
             }

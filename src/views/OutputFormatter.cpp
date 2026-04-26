@@ -283,19 +283,15 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
             else owner_str = p_num + (lvl_str.empty() ? "" : " " + lvl_str);
         }
 
+        // Plain (no ANSI) supaya truncation/padding di renderTile akurat —
+        // ANSI escape codes ikut dihitung byte-length oleh substr/leftOut.
         string tokens = "";
-        vector<string> player_colors = {red, yellow, green, cyan};
-        map<int, string> jailInfo;
         for (int i = 0; i < (int)players.size(); i++) {
             if (players[i]->getCurrTile() == idx && players[i]->getStatus() != "BANKRUPT") {
-                string pc = (i < (int)player_colors.size()) ? player_colors[i] : white;
-                string suffix;
-                if (players[i]->getStatus() == "JAIL")
-                    suffix = "IN";
-                tokens += pc + to_string(i+1) + reset + " ";
+                if (!tokens.empty()) tokens += " ";
+                tokens += to_string(i + 1);
             }
         }
-        while (!tokens.empty() && tokens.back() == ' ') tokens.pop_back();
 
         string line_2;
         if (!tokens.empty() && !owner_str.empty())
@@ -361,26 +357,26 @@ void OutputFormatter::printAkta(PropertyTile &t, Board &b, const GameConfig &cfg
     string ttype = t.getTileType();
     string color = getGroupColor(t.getColorGroup(), ttype);
     auto mval = [](int v) { return "M" + to_string(v); };
-    auto row = [&](string label, string val) {
+auto row = [&](string label, string val) {
         cout << color << "|" << reset
              << leftOut(" " + label, 22) << " :"
-             << color << leftOut(" " + val, 8) << "|" << reset << "\n";
+             << color << leftOut(" " + val, 12) << "|" << reset << "\n";
     };
 
     string groupTag = (ttype == "RAILROAD") ? "STASIUN" :
                       (ttype == "UTILITY")  ? "UTILITAS" : t.getColorGroup();
     string header = "[" + groupTag + "] " + t.getTileName() + " (" + t.getTileCode() + ")";
-    if ((int)header.size() > 32) header = header.substr(0, 32);
+    if ((int)header.size() > 36) header = header.substr(0, 36);
 
-    cout << color << "+================================+" << reset << "\n";
-    cout << color << "|" << reset << centerOut("AKTA KEPEMILIKAN", 32) << color << "|" << reset << "\n";
-    cout << color << "|" << reset << centerOut(header, 32)             << color << "|" << reset << "\n";
-    cout << color << "+================================+" << reset << "\n";
+    cout << color << "+========================================+" << reset << "\n";
+    cout << color << "|" << reset << centerOut("AKTA KEPEMILIKAN", 36) << color << "|" << reset << "\n";
+    cout << color << "|" << reset << centerOut(header, 36)             << color << "|" << reset << "\n";
+    cout << color << "+========================================+" << reset << "\n";
 
     if (ttype == "RAILROAD") {
         row("Cara Mendapat", "Gratis (landing)");
         row("Nilai Gadai",   mval(t.getMortgageValue()));
-        cout << color << "+--------------------------------+" << reset << "\n";
+        cout << color << "+----------------------------------------+" << reset << "\n";
         const auto &rr = cfg.getRailroadRent();
         for (auto &[cnt, rent] : rr) {
             string label = "Sewa (" + to_string(cnt) + " stasiun)";
@@ -389,7 +385,7 @@ void OutputFormatter::printAkta(PropertyTile &t, Board &b, const GameConfig &cfg
     } else if (ttype == "UTILITY") {
         row("Cara Mendapat", "Gratis (landing)");
         row("Nilai Gadai",   mval(t.getMortgageValue()));
-        cout << color << "+--------------------------------+" << reset << "\n";
+        cout << color << "+----------------------------------------+" << reset << "\n";
         const auto &um = cfg.getUtilityMultiplier();
         for (auto &[cnt, mult] : um) {
             string label = "Sewa (" + to_string(cnt) + " utilitas)";
@@ -399,30 +395,30 @@ void OutputFormatter::printAkta(PropertyTile &t, Board &b, const GameConfig &cfg
         // STREET
         row("Harga Beli",  mval(t.getBuyPrice()));
         row("Nilai Gadai", mval(t.getMortgageValue()));
-        cout << color << "+--------------------------------+" << reset << "\n";
+        cout << color << "+----------------------------------------+" << reset << "\n";
         vector<string> labels = {"Sewa (tanah kosong)", "Sewa (1 rumah)", "Sewa (2 rumah)",
                                   "Sewa (3 rumah)", "Sewa (4 rumah)", "Sewa (hotel)"};
         vector<int> rents = t.getRentPrice();
         for (int i = 0; i < (int)labels.size() && i < (int)rents.size(); i++)
             row(labels[i], mval(rents[i]));
-        cout << color << "+--------------------------------+" << reset << "\n";
+        cout << color << "+----------------------------------------+" << reset << "\n";
         row("Harga Rumah", mval(t.getHouseCost()));
         row("Harga Hotel", mval(t.getHotelCost()));
     }
 
-    cout << color << "+================================+" << reset << "\n";
+    cout << color << "+========================================+" << reset << "\n";
     string owner_str  = t.getTileOwner() ? t.getTileOwner()->getUsername() : "BANK";
     string status_str = t.isMortgage() ? "DIGADAI [M]" : "AKTIF";
     cout << color << "|" << reset
-         << leftOut(" Status: " + status_str + " (" + owner_str + ")", 32)
+         << leftOut(" Status: " + status_str + " (" + owner_str + ")", 36)
          << color << "|" << reset << "\n";
     if (t.getFestivalDuration() > 0) {
         string fest_str = "Festival: x" + to_string(t.getFestivalMultiplier()) + " (sisa " + to_string(t.getFestivalDuration()) + " giliran)";
         cout << color << "|" << reset
-             << leftOut(" " + fest_str, 32)
+             << leftOut(" " + fest_str, 36)
              << color << "|" << reset << "\n";
     }
-    cout << color << "+================================+" << reset << "\n";
+    cout << color << "+========================================+" << reset << "\n";
 }
 
 void OutputFormatter::printProperty(Player &p, Board &b){
