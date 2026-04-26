@@ -22,6 +22,7 @@
 #include "utils/exceptions/SaveLoadException.hpp"
 #include "utils/exceptions/UnablePayBuildException.hpp"
 #include "utils/exceptions/GeneralException.hpp"
+#include "utils/exceptions/InsufficientMoneyException.hpp"
 #include "utils/exceptions/UnablePayRentException.hpp"
 #include "utils/exceptions/UnablePayPPHTaxException.hpp"
 #include "utils/exceptions/UnablePayPBMTaxException.hpp"
@@ -102,14 +103,27 @@ void GameScreen::drainAndStoreEvents() {
     auto evts = gs->events.drainEvents();
     for (int i = (int)evts.size() - 1; i >= 0; i--)
         pushLog(evts[i]);
-    // auto-detect card events and show popup
-    for (const auto& e : evts) {
-        if (e.find("Kesempatan") != std::string::npos ||
-            e.find("Dana Umum") != std::string::npos ||
-            e.find("KARTU") != std::string::npos) {
-            showPopup = true;
-            popupTitle = "KARTU";
-            popupMsg = e;
+}
+
+// ─── checkNewCardLogs ─────────────────────────────────────────────────────────
+void GameScreen::checkNewCardLogs(int logBefore) {
+    if (!gs) return;
+    // scan new entries added since logBefore
+    for (int i = logBefore; i < (int)gs->transaction_log.size(); i++) {
+        const auto& entry = gs->transaction_log[i];
+        if (entry.getActionType() == "KARTU") {
+            std::string detail = entry.getDescription();
+            // "Kesempatan: <desc>" or "Dana Umum: <desc>"
+            bool isChance = (detail.find("Kesempatan") != std::string::npos);
+            std::string desc = detail;
+            auto colon = detail.find(": ");
+            if (colon != std::string::npos) desc = detail.substr(colon + 2);
+
+            showCardPopup     = true;
+            cardPopupIsChance = isChance;
+            cardPopupDesc     = desc;
+            pushLog((isChance ? "[Kesempatan] " : "[Dana Umum] ") + desc);
+            break;  // show one card popup at a time
         }
     }
 }
@@ -188,11 +202,13 @@ Color GameScreen::getColorGroupColor(const std::string& group) const {
 // called once dice animation finishes — apply roll to backend
 void GameScreen::executeRollResult() {
     if (!gs) return;
+    int logBefore = (int)gs->transaction_log.size();  // capture for card detection
     Player* p = gs->currentTurnPlayer();
     if (!p) return;
 
     auto finalizeRoll = [&]() {
         drainAndStoreEvents();
+        checkNewCardLogs(logBefore);
         hasRolled = true;
         gameLoop->checkWinGui();
         if (gs->game_over) gameOverOverlay = true;
@@ -304,9 +320,23 @@ void GameScreen::executeRollResult() {
             finalizeRoll();
             return;
         } catch (const UnablePayPPHTaxException&) {
-            // PPH should be intercepted by checkPPH() before reaching here;
-            // if we somehow get here, treat as regular tax debt
             pushLog("Tidak sanggup bayar pajak PPH.");
+            isDouble = dbl;
+            if (dbl) consecDoubles++;
+            finalizeRoll();
+            return;
+        } catch (const InsufficientMoneyException& e) {
+            // Card effect deducted money → balance went negative, but player can recover
+            // Parse how much they need to raise from message "CARD:<N>"
+            int needRaise = 0;
+            std::string msg = e.what();
+            auto pos = msg.find("CARD:");
+            if (pos != std::string::npos) needRaise = std::stoi(msg.substr(pos + 5));
+            // debtAmount = 0 → debtMode resolves when balance >= 0
+            debtMode    = true;
+            debtLanding = false;  // don't call applyLanding again — money already deducted
+            debtAmount  = 0;
+            pushLog("Tidak sanggup bayar kartu! Perlu naikkan M" + std::to_string(needRaise) + " via gadai.");
             isDouble = dbl;
             if (dbl) consecDoubles++;
             finalizeRoll();
@@ -571,7 +601,9 @@ void GameScreen::loadAssets() {
     pamTexture   = LoadTexture("assets/assets1/pam 1.png");
     plnTexture   = LoadTexture("assets/assets1/pln 1.png");
     trainTexture = LoadTexture("assets/assets1/train 1.png");
-    aktaTexture  = LoadTexture("assets/Akta_background.png");
+    aktaTexture      = LoadTexture("assets/Akta_background.png");
+    chanceCardTex    = LoadTexture("assets/cards/Chance_card.png");
+    communityCardTex = LoadTexture("assets/cards/Community_Card.png");
 
     // load static tile data from config
     std::string line;
@@ -629,6 +661,8 @@ void GameScreen::unloadAssets() {
     UnloadTexture(plnTexture);
     UnloadTexture(trainTexture);
     UnloadTexture(aktaTexture);
+    UnloadTexture(chanceCardTex);
+    UnloadTexture(communityCardTex);
     btnPlay.unload(); btnAssets.unload(); btnPlayers.unload(); btnLog.unload();
     btnRollDice.unload(); btnEndTurn.unload();
     btnAuction.unload();
@@ -641,6 +675,7 @@ void GameScreen::unloadAssets() {
     btnD2Plus.unload(); btnD2Minus.unload();
     btnConfirmDice.unload(); btnCloseDice.unload();
     btnPopupOk.unload();
+    btnCardPopupOk.unload();
     for (auto& b : btnSkillCards) b.unload();
 }
 
@@ -650,7 +685,7 @@ void GameScreen::update(float dt) {
     // TELEPORT_SELECT intentionally excluded: it needs tile clicks on board
     bool cardBlocks = (cardMode == CardMode::LASSO_SELECT ||
                        cardMode == CardMode::DEMOLITION_SELECT);
-    bool anyOverlay = showPopup || showSelPopup || gameOverOverlay || setDiceMode
+    bool anyOverlay = showPopup || showCardPopup || showSelPopup || gameOverOverlay || setDiceMode
                       || auctionMode || cardBlocks || pphPending
                       || buildMode || festivalPending || propertyLandingPending
                       || saveMode || debtMode;
@@ -727,7 +762,16 @@ void GameScreen::update(float dt) {
         }
     }
 
-    // popup blocks everything else
+    // card popup — dismiss with any click or ENTER
+    if (showCardPopup) {
+        if (btnCardPopupOk.isClicked() || IsKeyPressed(KEY_ENTER) ||
+            IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            showCardPopup = false;
+        }
+        return;
+    }
+
+    // generic popup blocks everything else
     if (showPopup) {
         if (btnPopupOk.isClicked()) showPopup = false;
         return;
@@ -1191,7 +1235,10 @@ void GameScreen::update(float dt) {
         if (!p) { debtMode = false; debtLanding = false; return; }
 
         // Auto-resolve if player now can afford
-        if (p->getBalance() >= debtAmount) {
+        // card debt (debtAmount==0): resolve when balance ≥ 0; rent debt: balance ≥ debtAmount
+        bool debtResolved = (debtAmount == 0) ? (p->getBalance() >= 0)
+                                               : (p->getBalance() >= debtAmount);
+        if (debtResolved) {
             debtMode = false;
             if (debtLanding) {
                 debtLanding = false;
@@ -1664,6 +1711,7 @@ void GameScreen::draw() {
     if (selectedTileIdx >= 0) drawTileOverlay();
 
     // popup
+    if (showCardPopup) drawCardPopup();
     if (showPopup) drawPopup();
 
     // selection popup (LASSO / DEMOLITION)
@@ -2964,15 +3012,24 @@ void GameScreen::drawDebtMode(float cardX, float cardScale) {
 
     int titleSz = (int)(14 * globalScale);
     int subSz   = (int)(12 * globalScale);
-    DrawText("! TIDAK SANGGUP BAYAR SEWA",
-             (int)(boxX + 8*globalScale), (int)(boxY + 8*globalScale),
+
+    bool isCardDebt = (debtAmount == 0);  // card debt: balance went negative
+    int  balance    = p ? p->getBalance() : 0;
+    int  shortage   = isCardDebt ? std::max(0, -balance) : (debtAmount - balance);
+
+    const char* titleStr = isCardDebt ? "! SALDO NEGATIF — EFEK KARTU"
+                                       : "! TIDAK SANGGUP BAYAR";
+    DrawText(titleStr, (int)(boxX + 8*globalScale), (int)(boxY + 8*globalScale),
              titleSz, {180,50,40,255});
 
     char buf1[64], buf2[64];
-    std::snprintf(buf1, sizeof(buf1), "Sewa: M%d", debtAmount);
-    std::snprintf(buf2, sizeof(buf2), "Saldo: M%d  (kurang M%d)",
-                  p ? p->getBalance() : 0,
-                  p ? debtAmount - p->getBalance() : debtAmount);
+    if (isCardDebt) {
+        std::snprintf(buf1, sizeof(buf1), "Saldo: M%d", balance);
+        std::snprintf(buf2, sizeof(buf2), "Gadai properti untuk naikkan M%d", shortage);
+    } else {
+        std::snprintf(buf1, sizeof(buf1), "Tagihan: M%d", debtAmount);
+        std::snprintf(buf2, sizeof(buf2), "Saldo: M%d  (kurang M%d)", balance, shortage);
+    }
     DrawText(buf1, (int)(boxX + 8*globalScale),
              (int)(boxY + 8*globalScale + titleSz + 4*globalScale), subSz, BLACK);
     DrawText(buf2, (int)(boxX + 8*globalScale),
@@ -3000,4 +3057,70 @@ void GameScreen::drawDebtMode(float cardX, float cardScale) {
         btnDebtForce.setDisabled(false);
         btnDebtForce.draw();
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CARD DRAW POPUP (Kesempatan / Dana Umum)
+// ──────────────────────────────────────────────────────────────────────────────
+void GameScreen::drawCardPopup() {
+    int sw = GetScreenWidth(), sh = GetScreenHeight();
+    DrawRectangle(0, 0, sw, sh, {0, 0, 0, 170});
+
+    Texture2D& cardTex = cardPopupIsChance ? chanceCardTex : communityCardTex;
+
+    // scale card to fit nicely — max 55% screen height, 40% width
+    float maxW = sw * 0.40f;
+    float maxH = sh * 0.55f;
+    float sc   = 1.0f;
+    if (cardTex.width > 0 && cardTex.height > 0) {
+        sc = std::min(maxW / (float)cardTex.width, maxH / (float)cardTex.height);
+    }
+    float cW = cardTex.width  * sc;
+    float cH = cardTex.height * sc;
+    float cX = (sw - cW) / 2.0f;
+    float cY = (sh - cH) / 2.0f;
+
+    DrawTextureEx(cardTex, {cX, cY}, 0.0f, sc, WHITE);
+
+    // ── desc text: word-wrap into lines first, then draw centered ────────
+    int descSz     = (int)(15 * globalScale);
+    float lineH    = (float)(descSz + 6) * globalScale;
+    float maxLineW = cW * 0.80f;
+    Color descC    = {40, 30, 20, 240};
+
+    // 1. build wrapped lines
+    std::vector<std::string> lines;
+    std::string remaining = cardPopupDesc;
+    while (!remaining.empty()) {
+        int low = 1, high = (int)remaining.size(), best = (int)remaining.size();
+        while (low <= high) {
+            int mid = (low + high) / 2;
+            if (MeasureText(remaining.substr(0, mid).c_str(), descSz) <= (int)maxLineW)
+            { best = mid; low = mid + 1; } else { high = mid - 1; }
+        }
+        int breakAt = best;
+        if (breakAt < (int)remaining.size()) {
+            size_t sp = remaining.rfind(' ', breakAt);
+            if (sp != std::string::npos && sp > 0) breakAt = (int)sp;
+        }
+        lines.push_back(remaining.substr(0, breakAt));
+        while (breakAt < (int)remaining.size() && remaining[breakAt] == ' ') breakAt++;
+        remaining = remaining.substr(breakAt);
+    }
+
+    // 2. draw lines vertically centered inside card
+    float totalH = lines.size() * lineH;
+    float startY = cY + (cH - totalH) / 2.0f;
+    for (const auto& line : lines) {
+        int lw = MeasureText(line.c_str(), descSz);
+        DrawText(line.c_str(), (int)(cX + (cW - lw) / 2.0f), (int)startY, descSz, descC);
+        startY += lineH;
+    }
+
+    // hint inside card, near bottom
+    int hintSz = (int)(10 * globalScale);
+    const char* hint = "Klik di mana saja untuk lanjut";
+    int hw = MeasureText(hint, hintSz);
+    DrawText(hint, (int)(cX + (cW - hw) / 2.0f),
+             (int)(cY + cH - hintSz - 14.0f * globalScale), hintSz, {120, 90, 60, 150});
 }

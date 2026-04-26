@@ -36,6 +36,8 @@ private:
     Texture2D plnTexture;
     Texture2D trainTexture;
     Texture2D aktaTexture;
+    Texture2D chanceCardTex;
+    Texture2D communityCardTex;
 
     // ── Static tile display data ──────────────────────────────────────────
     struct TileInfo {
@@ -103,6 +105,14 @@ private:
     bool        showPopup;
     std::string popupTitle;
     std::string popupMsg;
+
+    // ── Card draw popup (Kesempatan / Dana Umum) ──────────────────────────
+    bool        showCardPopup  = false;
+    bool        cardPopupIsChance = true;  // true=Kesempatan, false=Dana Umum
+    std::string cardPopupDesc;
+    Button      btnCardPopupOk;
+    void checkNewCardLogs(int logBefore);
+    void drawCardPopup();
 
     // ── Auction state ─────────────────────────────────────────────────────
     bool                 auctionMode     = false;

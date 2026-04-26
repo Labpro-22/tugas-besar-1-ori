@@ -13,6 +13,7 @@
 #ifdef GUI_MODE
 #include "include/utils/exceptions/UnablePayPPHTaxException.hpp"
 #include "include/utils/exceptions/UnablePayPBMTaxException.hpp"
+#include "include/utils/exceptions/InsufficientMoneyException.hpp"
 #endif
 #include "include/models/card/ChanceCard.hpp"
 #include "include/models/card/CommunityChest.hpp"
@@ -307,6 +308,17 @@ void LandingProcessor::drawAndResolveChance(Player &p) {
             applyLanding(p);
         }
         state.addLog(p, "KARTU", "Kesempatan: " + card->describe());
+
+#ifdef GUI_MODE
+        // If card deducted enough to push balance negative but player can still recover
+        if (p.getBalance() < 0 && p.getStatus() != "BANKRUPT") {
+            int maxLiq = PropertyManager::calculateMaxLiquidation(p);
+            if (maxLiq + p.getBalance() >= 0)
+                throw InsufficientMoneyException("CARD:" + to_string(-p.getBalance()));
+            else if (bankruptcyProc)
+                bankruptcyProc->processBankruptcy(p);
+        }
+#endif
     }
 }
 
@@ -334,7 +346,13 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
                     cout << p.getUsername() << " tidak mampu membayar tagihan kartu Dana Umum! Bangkrut!\n";
                     if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
                 } else {
+#ifdef GUI_MODE
+                    state.community_deck.discardCard(card);
+                    state.addLog(p, "KARTU", "Dana Umum: " + card->describe());
+                    throw InsufficientMoneyException("CARD:" + to_string(-p.getBalance()));
+#else
                     cout << "Saldo habis setelah efek kartu. Likuidasi mungkin diperlukan.\n";
+#endif
                 }
             }
         }
