@@ -254,8 +254,20 @@ void GameScreen::executeRollResult() {
         }
     } else {
         bool dbl = landing->rollAndMove(*p, true, dice1, dice2);
-        // rollAndMove already called applyGoSalary internally; avoid double-count
-        // landing->applyGoSalary(*p, p->getCurrTile() - dice1 - dice2);
+
+        // ── 3rd consecutive double → IMMEDIATE jail, no exceptions ───────
+        if (dbl) {
+            consecDoubles++;
+            if (consecDoubles >= 3) {
+                landing->sendToJail(*p);
+                isDouble      = false;
+                consecDoubles = 0;
+                pushLog(p->getUsername() + " masuk penjara (3x double berturut-turut)!");
+                finalizeRoll();
+                handleEndTurn();
+                return;
+            }
+        }
 
         int tileIdx = p->getCurrTile();
         auto* prop = dynamic_cast<PropertyTile*>(gs->tiles[tileIdx]);
@@ -266,25 +278,13 @@ void GameScreen::executeRollResult() {
             propertyLandingPending = true;
             propertyLandingTileIdx = tileIdx;
             propertyLandingDouble  = dbl;
-            if (dbl) {
-                consecDoubles++;
-                if (consecDoubles >= 3) {
-                    landing->sendToJail(*p);
-                    propertyLandingDouble = false;
-                    consecDoubles = 0;
-                    propertyLandingPending = false;
-                    finalizeRoll();
-                    handleEndTurn();
-                    return;
-                }
-            }
             finalizeRoll();
             return;
         }
 
         if (checkPPH(*p)) {
             isDouble = dbl;
-            if (dbl) consecDoubles++;
+            // (consecDoubles already incremented above if dbl)
             return;
         }
 
@@ -303,7 +303,6 @@ void GameScreen::executeRollResult() {
             debtAmount  = rent > 0 ? rent : debtAmount;
             pushLog("Tidak sanggup bayar sewa M" + std::to_string(debtAmount));
             isDouble = dbl;
-            if (dbl) consecDoubles++;
             finalizeRoll();
             return;
         } catch (const UnablePayPBMTaxException& e) {
@@ -316,47 +315,33 @@ void GameScreen::executeRollResult() {
             debtAmount  = amt > 0 ? amt : debtAmount;
             pushLog("Tidak sanggup bayar pajak PBM M" + std::to_string(debtAmount));
             isDouble = dbl;
-            if (dbl) consecDoubles++;
             finalizeRoll();
             return;
         } catch (const UnablePayPPHTaxException&) {
             pushLog("Tidak sanggup bayar pajak PPH.");
             isDouble = dbl;
-            if (dbl) consecDoubles++;
             finalizeRoll();
             return;
         } catch (const InsufficientMoneyException& e) {
-            // Card effect deducted money → balance went negative, but player can recover
-            // Parse how much they need to raise from message "CARD:<N>"
             int needRaise = 0;
             std::string msg = e.what();
             auto pos = msg.find("CARD:");
             if (pos != std::string::npos) needRaise = std::stoi(msg.substr(pos + 5));
-            // debtAmount = 0 → debtMode resolves when balance >= 0
             debtMode    = true;
-            debtLanding = false;  // don't call applyLanding again — money already deducted
+            debtLanding = false;
             debtAmount  = 0;
             pushLog("Tidak sanggup bayar kartu! Perlu naikkan M" + std::to_string(needRaise) + " via gadai.");
             isDouble = dbl;
-            if (dbl) consecDoubles++;
             finalizeRoll();
             return;
         }
 
-        // if player was sent to jail (GO_JAIL tile or card), end turn — no bonus roll
+        // if player was sent to jail by landing (GO_JAIL tile / card) — end turn, no bonus
         if (p->getStatus() == "JAIL") {
             isDouble      = false;
             consecDoubles = 0;
         } else {
-            isDouble = dbl;
-            if (dbl) {
-                consecDoubles++;
-                if (consecDoubles >= 3) {
-                    landing->sendToJail(*p);
-                    isDouble      = false;
-                    consecDoubles = 0;
-                }
-            }
+            isDouble = dbl;  // consecDoubles already updated at top of else block
         }
     }
 
@@ -387,10 +372,19 @@ void GameScreen::handleEndTurn() {
         hasRolled  = false;
         turnEnded  = false;
         isDouble   = false;
-        // (no log for clean end turn)
+        checkJailChoice();   // show popup if next player is in jail
     } else {
         gameOverOverlay = true;
     }
+}
+
+// ─── checkJailChoice ─────────────────────────────────────────────────────────
+void GameScreen::checkJailChoice() {
+    if (!gs) return;
+    Player* p = gs->currentTurnPlayer();
+    // only for human players in jail who haven't been shown the popup yet
+    if (p && p->getStatus() == "JAIL" && !dynamic_cast<Bot*>(p))
+        jailChoicePending = true;
 }
 
 // ─── computeLayout ────────────────────────────────────────────────────────────
@@ -530,10 +524,10 @@ void GameScreen::computeLayout() {
     Color abFg    = {80,40,35,255};
     float col2X   = abBoxX + abtnW + abtnColGap;
 
-    btnAuction.loadAsText(    "AUCTION",       col2X,  abtnY,                                    abtnW, abtnH, abBg, abHover, abFg);
-    btnBuildHouse.loadAsText( "BUILD HOUSE",  abBoxX, abtnY+(abtnH+abtnRowGap),                  abtnW, abtnH, abBg, abHover, abFg);
-    btnMortgage.loadAsText(   "MORTGAGE",      col2X,  abtnY+(abtnH+abtnRowGap),                  abtnW, abtnH, abBg, abHover, abFg);
-    btnRedeem.loadAsText(     "TEBUS",        abBoxX, abtnY+2.0f*(abtnH+abtnRowGap),              abtnW, abtnH, abBg, abHover, abFg);
+    // AUCTION removed from play tab — only triggered by property landing or bankruptcy
+    btnBuildHouse.loadAsText( "BUILD HOUSE", abBoxX, abtnY,                         abtnW, abtnH, abBg, abHover, abFg);
+    btnMortgage.loadAsText(   "MORTGAGE",    col2X,  abtnY,                         abtnW, abtnH, abBg, abHover, abFg);
+    btnRedeem.loadAsText(     "TEBUS",       col2X,  abtnY+(abtnH+abtnRowGap),       abtnW, abtnH, abBg, abHover, abFg);
 
     // debt recovery buttons — positioned in same area as action buttons
     float debtW = (abBoxW - abtnColGap) / 2.0f;
@@ -665,7 +659,6 @@ void GameScreen::unloadAssets() {
     UnloadTexture(communityCardTex);
     btnPlay.unload(); btnAssets.unload(); btnPlayers.unload(); btnLog.unload();
     btnRollDice.unload(); btnEndTurn.unload();
-    btnAuction.unload();
     btnBuildHouse.unload(); btnMortgage.unload(); btnRedeem.unload();
     btnDebtGadai.unload(); btnDebtLelang.unload(); btnDebtForce.unload();
     btnAuctionBid.unload(); btnAuctionPass.unload();
@@ -676,6 +669,7 @@ void GameScreen::unloadAssets() {
     btnConfirmDice.unload(); btnCloseDice.unload();
     btnPopupOk.unload();
     btnCardPopupOk.unload();
+    btnJailPay.unload(); btnJailRoll.unload();
     for (auto& b : btnSkillCards) b.unload();
 }
 
@@ -688,7 +682,7 @@ void GameScreen::update(float dt) {
     bool anyOverlay = showPopup || showCardPopup || showSelPopup || gameOverOverlay || setDiceMode
                       || auctionMode || cardBlocks || pphPending
                       || buildMode || festivalPending || propertyLandingPending
-                      || saveMode || debtMode;
+                      || saveMode || debtMode || jailChoicePending;
 
     // tab switching (only when no overlay is blocking)
     if (!anyOverlay) {
@@ -742,10 +736,8 @@ void GameScreen::update(float dt) {
         btnRedeem.setDisabled(!myTurn || !hasMortgaged);
 
         if (jailed) {
-            btnAuction.setDisabled(true);
             btnBuildHouse.setDisabled(true);
         } else {
-            btnAuction.setDisabled(!afterRoll);
             btnBuildHouse.setDisabled(!afterRoll);
         }
 
@@ -760,6 +752,24 @@ void GameScreen::update(float dt) {
         } else {
             btnEndTurn.setColors({244,206,43,255}, {250,220,70,255}, {80,40,35,255});
         }
+    }
+
+    // ── jail choice popup ─────────────────────────────────────────────────
+    if (jailChoicePending && gs) {
+        Player* p = gs->currentTurnPlayer();
+        if (!p || p->getStatus() != "JAIL") { jailChoicePending = false; return; }
+
+        if (btnJailPay.isClicked()) {
+            // pay fine → exit jail
+            bankruptcy->cmdBayarDenda(*p);
+            drainAndStoreEvents();
+            jailChoicePending = false;
+            // player now ACTIVE — can roll normally this turn
+        } else if (btnJailRoll.isClicked()) {
+            // skip popup → let player roll (JailManager handles it in executeRollResult)
+            jailChoicePending = false;
+        }
+        return;
     }
 
     // card popup — dismiss with any click or ENTER
@@ -1338,8 +1348,6 @@ void GameScreen::update(float dt) {
     if (hasRolled && activeTab == 0 && !currentPlayerIsJailed()) {
         Player* p = gs->currentTurnPlayer();
 
-        if (btnAuction.isClicked()) startAuction();
-
         if (btnBuildHouse.isClicked()) {
             auto options = PropertyManager::getBuildableOptions(*p, gs->board);
             if (options.empty()) {
@@ -1711,6 +1719,7 @@ void GameScreen::draw() {
     if (selectedTileIdx >= 0) drawTileOverlay();
 
     // popup
+    if (jailChoicePending) drawJailChoice();
     if (showCardPopup) drawCardPopup();
     if (showPopup) drawPopup();
 
@@ -2094,7 +2103,6 @@ void GameScreen::drawPlayTab(float cardX, float cardScale) {
         DrawRectangleLinesEx({btn.getX(), btn.getY(), btn.getWidth(), btn.getHeight()},
                              1.5f, border);
     };
-    drawBtn(btnAuction);
     drawBtn(btnBuildHouse);
     drawBtn(btnMortgage);
     drawBtn(btnRedeem);
@@ -3123,4 +3131,84 @@ void GameScreen::drawCardPopup() {
     int hw = MeasureText(hint, hintSz);
     DrawText(hint, (int)(cX + (cW - hw) / 2.0f),
              (int)(cY + cH - hintSz - 14.0f * globalScale), hintSz, {120, 90, 60, 150});
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// JAIL CHOICE POPUP
+// ──────────────────────────────────────────────────────────────────────────────
+void GameScreen::drawJailChoice() {
+    if (!gs) return;
+    Player* p = gs->currentTurnPlayer();
+    if (!p) return;
+
+    int sw = GetScreenWidth(), sh = GetScreenHeight();
+    DrawRectangle(0, 0, sw, sh, {0, 0, 0, 160});
+
+    float popW = 380.0f * globalScale;
+    float popH = 220.0f * globalScale;
+    float popX = (sw - popW) / 2.0f;
+    float popY = (sh - popH) / 2.0f;
+
+    // popup box
+    DrawRectangleRounded({popX, popY, popW, popH}, 0.12f, 8, {255, 243, 210, 255});
+    DrawRectangleRoundedLines({popX, popY, popW, popH}, 0.12f, 8, {80, 40, 35, 255});
+
+    // header band
+    float bandH = 46.0f * globalScale;
+    DrawRectangleRounded({popX, popY, popW, bandH}, 0.12f, 8, {160, 50, 45, 255});
+    DrawRectangle((int)popX, (int)(popY + bandH/2.0f), (int)popW, (int)(bandH/2.0f), {160, 50, 45, 255});
+
+    int titleSz = (int)(17 * globalScale);
+    const char* title = "ANDA DI DALAM PENJARA";
+    int tw = MeasureText(title, titleSz);
+    DrawText(title, (int)(popX + (popW - tw)/2.0f),
+             (int)(popY + (bandH - titleSz)/2.0f), titleSz, WHITE);
+
+    // jail turn counter
+    int jailTurns = gs->jail_turns.count(p) ? gs->jail_turns[p] : 0;
+    int infoSz = (int)(13 * globalScale);
+    int jailFine = gs->config.getJailFine();
+
+    char turnBuf[64];
+    std::snprintf(turnBuf, sizeof(turnBuf), "Giliran penjara ke-%d dari 3", jailTurns + 1);
+    int tbW = MeasureText(turnBuf, infoSz);
+    DrawText(turnBuf, (int)(popX + (popW - tbW)/2.0f),
+             (int)(popY + bandH + 14.0f * globalScale), infoSz, {100, 60, 55, 255});
+
+    // question text
+    int qSz = (int)(14 * globalScale);
+    char q1[80], q2[80];
+    std::snprintf(q1, sizeof(q1), "Apakah Anda ingin membayar denda penjara");
+    std::snprintf(q2, sizeof(q2), "sebesar M%d untuk bebas sekarang?", jailFine);
+    int q1W = MeasureText(q1, qSz), q2W = MeasureText(q2, qSz);
+    float qY = popY + bandH + 14.0f*globalScale + infoSz + 12.0f*globalScale;
+    DrawText(q1, (int)(popX + (popW - q1W)/2.0f), (int)qY, qSz, BLACK);
+    DrawText(q2, (int)(popX + (popW - q2W)/2.0f), (int)(qY + qSz + 4.0f*globalScale), qSz, BLACK);
+
+    // warning if can't afford
+    bool canAfford = (p->getBalance() >= jailFine);
+    if (!canAfford) {
+        int wSz = (int)(11 * globalScale);
+        const char* warn = "(Saldo tidak cukup untuk membayar denda)";
+        int wW = MeasureText(warn, wSz);
+        DrawText(warn, (int)(popX + (popW - wW)/2.0f),
+                 (int)(qY + 2*(qSz + 4.0f*globalScale) + 4.0f*globalScale), wSz, {180, 50, 40, 255});
+    }
+
+    // buttons
+    float btnW = popW * 0.38f, btnH = 34.0f * globalScale;
+    float gap  = 16.0f * globalScale;
+    float btnY = popY + popH - btnH - 14.0f * globalScale;
+    float payX = popX + (popW - 2*btnW - gap) / 2.0f;
+    float rollX = payX + btnW + gap;
+
+    Color payBg    = canAfford ? Color{70,160,90,255}  : Color{160,160,160,255};
+    Color payHover = canAfford ? Color{90,180,110,255} : Color{160,160,160,255};
+    btnJailPay.loadAsText("BAYAR DENDA", payX, btnY, btnW, btnH, payBg, payHover, WHITE);
+    btnJailPay.setDisabled(!canAfford);
+    btnJailPay.draw();
+
+    btnJailRoll.loadAsText("LEMPAR DADU", rollX, btnY, btnW, btnH,
+                            {220,150,40,255},{240,170,60,255}, WHITE);
+    btnJailRoll.draw();
 }

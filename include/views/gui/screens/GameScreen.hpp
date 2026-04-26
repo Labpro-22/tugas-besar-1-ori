@@ -51,7 +51,7 @@ private:
     // ── Core buttons ──────────────────────────────────────────────────────
     Button btnPlay, btnAssets, btnPlayers, btnLog;
     Button btnRollDice, btnEndTurn;
-    Button btnAuction, btnBuildHouse, btnMortgage, btnRedeem;
+    Button btnBuildHouse, btnMortgage, btnRedeem;
     Button btnSaveGame;
     Button btnPopupOk;
 
@@ -189,6 +189,13 @@ private:
     int  saveInputLen = 8;
     Button btnSaveConfirm;
     Button btnSaveCancel;
+
+    // ── Jail choice popup (start of jailed player's turn) ────────────────
+    bool   jailChoicePending = false;
+    Button btnJailPay;
+    Button btnJailRoll;
+    void   checkJailChoice();   // call after turn advances
+    void   drawJailChoice();
 
     // ── Debt recovery mode (can't afford rent/tax) ───────────────────────
     bool    debtMode     = false;   // player can't afford landing → must gadai/lelang
