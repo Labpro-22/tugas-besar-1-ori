@@ -372,6 +372,53 @@ void GameScreen::handleEndTurn() {
         hasRolled  = false;
         turnEnded  = false;
         isDouble   = false;
+
+        // Resolve any deferred landings for the new current player
+        Player* newPlayer = gs->currentTurnPlayer();
+        if (newPlayer) {
+            auto it = gs->deferredLandings.find(newPlayer);
+            if (it != gs->deferredLandings.end()) {
+                gs->deferredLandings.erase(it);
+                if (newPlayer->getStatus() != "BANKRUPT") {
+                    try {
+                        landing->applyLanding(*newPlayer);
+                    } catch (const UnablePayRentException& e) {
+                        std::string msg = e.what();
+                        int rent = 0;
+                        auto pos = msg.find('M');
+                        if (pos != std::string::npos) rent = std::stoi(msg.substr(pos + 1));
+                        debtMode = true; debtLanding = true; debtAmount = rent;
+                        pushLog(newPlayer->getUsername() + " tidak sanggup bayar sewa M" + std::to_string(rent) + " (efek LASSO)");
+                    } catch (const UnablePayPBMTaxException& e) {
+                        std::string msg = e.what();
+                        int amt = 0; auto pos = msg.find('M');
+                        if (pos != std::string::npos) amt = std::stoi(msg.substr(pos + 1));
+                        debtMode = true; debtLanding = true; debtAmount = amt;
+                        pushLog("Tidak sanggup bayar pajak PBM M" + std::to_string(amt) + " (efek LASSO)");
+                    } catch (const UnablePayPPHTaxException&) {
+                        pushLog("Tidak sanggup bayar pajak PPH (efek LASSO).");
+                    } catch (const InsufficientMoneyException& e) {
+                        int needRaise = 0;
+                        std::string msg = e.what();
+                        auto pos = msg.find("CARD:");
+                        if (pos != std::string::npos) needRaise = std::stoi(msg.substr(pos + 5));
+                        debtMode = true; debtLanding = false; debtAmount = 0;
+                        pushLog("Tidak sanggup bayar kartu! Perlu naikkan M" + std::to_string(needRaise) + " via gadai.");
+                    }
+                    drainAndStoreEvents();
+                    if (debtMode) {
+                        checkJailChoice();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // draw skill card for the new current player (human or bot)
+        if (cardProc && newPlayer)
+            cardProc->drawSkillCardAtTurnStart(*newPlayer);
+        drainAndStoreEvents();
+
         checkJailChoice();   // show popup if next player is in jail
     } else {
         gameOverOverlay = true;
@@ -524,10 +571,10 @@ void GameScreen::computeLayout() {
     Color abFg    = {80,40,35,255};
     float col2X   = abBoxX + abtnW + abtnColGap;
 
-    // AUCTION removed from play tab — only triggered by property landing or bankruptcy
-    btnBuildHouse.loadAsText( "BUILD HOUSE", abBoxX, abtnY,                         abtnW, abtnH, abBg, abHover, abFg);
-    btnMortgage.loadAsText(   "MORTGAGE",    col2X,  abtnY,                         abtnW, abtnH, abBg, abHover, abFg);
-    btnRedeem.loadAsText(     "TEBUS",       col2X,  abtnY+(abtnH+abtnRowGap),       abtnW, abtnH, abBg, abHover, abFg);
+    // Layout: GADAI | TEBUS  (row 1),  BUILD HOUSE full-width (row 2)
+    btnMortgage.loadAsText(  "GADAI",       abBoxX, abtnY,                    abtnW, abtnH, abBg, abHover, abFg);
+    btnRedeem.loadAsText(    "TEBUS",       col2X,  abtnY,                    abtnW, abtnH, abBg, abHover, abFg);
+    btnBuildHouse.loadAsText("BUILD HOUSE", abBoxX, abtnY+(abtnH+abtnRowGap), abBoxW, abtnH, abBg, abHover, abFg);
 
     // debt recovery buttons — positioned in same area as action buttons
     float debtW = (abBoxW - abtnColGap) / 2.0f;
@@ -679,10 +726,11 @@ void GameScreen::update(float dt) {
     // TELEPORT_SELECT intentionally excluded: it needs tile clicks on board
     bool cardBlocks = (cardMode == CardMode::LASSO_SELECT ||
                        cardMode == CardMode::DEMOLITION_SELECT);
+    // debtMode intentionally excluded from anyOverlay so skill cards remain usable
     bool anyOverlay = showPopup || showCardPopup || showSelPopup || gameOverOverlay || setDiceMode
                       || auctionMode || cardBlocks || pphPending
                       || buildMode || festivalPending || propertyLandingPending
-                      || saveMode || debtMode || jailChoicePending;
+                      || saveMode || jailChoicePending;
 
     // tab switching (only when no overlay is blocking)
     if (!anyOverlay) {
@@ -721,19 +769,26 @@ void GameScreen::update(float dt) {
         bool afterRoll = !blocked && !isBot && hasRolled && !diceRolling;
 
         // GADAI / TEBUS: available anytime during player's turn (before OR after roll)
+        // In debtMode, still available (that's the whole point)
         bool myTurn = !blocked && !isBot && !diceRolling;
         bool hasGadaiable = false, hasMortgaged = false;
         if (gs) {
             Player* cur = gs->currentTurnPlayer();
             if (cur) {
                 for (auto* prop : cur->getOwnedProperties()) {
-                    if (!prop->isMortgage()) hasGadaiable = true;
-                    else                     hasMortgaged = true;
+                    if (prop->getTileOwner() == cur && !prop->isMortgage()) hasGadaiable = true;
+                    if (prop->getTileOwner() == cur &&  prop->isMortgage()) hasMortgaged = true;
                 }
             }
         }
-        btnMortgage.setDisabled(!myTurn || !hasGadaiable);
-        btnRedeem.setDisabled(!myTurn || !hasMortgaged);
+        // debtMode: only GADAI allowed (TEBUS makes balance worse)
+        if (debtMode) {
+            btnMortgage.setDisabled(!hasGadaiable);
+            btnRedeem.setDisabled(true);
+        } else {
+            btnMortgage.setDisabled(!myTurn || !hasGadaiable);
+            btnRedeem.setDisabled(!myTurn || !hasMortgaged);
+        }
 
         if (jailed) {
             btnBuildHouse.setDisabled(true);
@@ -1237,6 +1292,50 @@ void GameScreen::update(float dt) {
     // ── selection popup (LASSO / DEMOLITION) ─────────────────────────────
     if (showSelPopup) { updateSelPopup(); return; }
 
+    // ── skill card confirmation popup ─────────────────────────────────────
+    if (skillCardConfirmPending && gs) {
+        Player* p = gs->currentTurnPlayer();
+        if (!p) { skillCardConfirmPending = false; skillCardConfirmIdx = -1; }
+        else {
+            int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
+            float popW = 380.0f * globalScale;
+            float popH = 220.0f * globalScale;
+            float popX = (sw2 - popW) / 2.0f;
+            float popY = (sh2 - popH) / 2.0f;
+            float btnW = 100.0f * globalScale;
+            float btnH = 32.0f * globalScale;
+            float gap  = 16.0f * globalScale;
+            float btnY = popY + popH - btnH - 20.0f * globalScale;
+            float totalBtnW = btnW * 2 + gap;
+            float btnStartX = popX + (popW - totalBtnW) / 2.0f;
+
+            // Soft green for USE, transparent (popup-bg) for CANCEL
+            btnSkillConfirmUse.loadAsText("GUNAKAN", btnStartX, btnY, btnW, btnH,
+                                          {100,145,100,255},{120,170,120,255},WHITE);
+            btnSkillConfirmCancel.loadAsText("BATAL", btnStartX + btnW + gap, btnY, btnW, btnH,
+                                             {255,243,210,255},{255,235,202,255},{80,40,35,255});
+            if (btnSkillConfirmUse.isClicked()) {
+                auto* card = p->getHandCard(skillCardConfirmIdx);
+                if (card) {
+                    std::string t = card->getCardType();
+                    if      (t == "TELEPORT")   useCardWithTarget(skillCardConfirmIdx, CardMode::TELEPORT_SELECT);
+                    else if (t == "LASSO")      useCardWithTarget(skillCardConfirmIdx, CardMode::LASSO_SELECT);
+                    else if (t == "DEMOLITION") useCardWithTarget(skillCardConfirmIdx, CardMode::DEMOLITION_SELECT);
+                    else                        useCardImmediate(skillCardConfirmIdx);
+                }
+                skillCardConfirmPending = false;
+                skillCardConfirmIdx = -1;
+                return;
+            }
+            if (btnSkillConfirmCancel.isClicked()) {
+                skillCardConfirmPending = false;
+                skillCardConfirmIdx = -1;
+                return;
+            }
+        }
+        return;
+    }
+
     // ── debt recovery mode ────────────────────────────────────────────────
     if (debtMode && gs) {
         Player* p = gs->currentTurnPlayer();
@@ -1267,16 +1366,42 @@ void GameScreen::update(float dt) {
         }
 
         // GADAI → open gadai popup (stays in debtMode after)
-        if (btnDebtGadai.isClicked()) {
-            openGadaiPopup();
+        if (btnDebtGadai.isClicked()) { openGadaiPopup(); return; }
+
+        // Check if player just used SHIELD card → cancel debt landing
+        if (debtLanding && p->isShieldActive()) {
+            // Shield is now active — retry applyLanding, rent will be cancelled
+            debtMode    = false;
+            debtLanding = false;
+            try { landing->applyLanding(*p); } catch (...) {}
+            drainAndStoreEvents();
+            pushLog("Shield melindungi! Sewa dibatalkan.");
+            gameLoop->checkWinGui();
+            if (gs->game_over) gameOverOverlay = true;
             return;
         }
-        // LELANG → open auction
-        if (btnDebtLelang.isClicked()) {
-            startAuction();
-            return;
+
+        // Skill card section: handle card clicks even in debtMode
+        if (!p->isSkillUsed() && !skillCardConfirmPending) {
+            int handSz = p->getHandSize();
+            for (int ci = 0; ci < handSz && ci < 4; ci++) {
+                if (btnSkillCards[ci].isClicked()) {
+                    auto* card = p->getHandCard(ci);
+                    if (!card) continue;
+                    std::string t = card->getCardType();
+                    // Only SHIELD and DISCOUNT make sense in debt context
+                    if (t == "SHIELD" || t == "DISCOUNT") {
+                        skillCardConfirmPending = true;
+                        skillCardConfirmIdx = ci;
+                    } else {
+                        pushLog("Kartu " + t + " tidak bisa dipakai saat dalam kondisi utang.");
+                    }
+                    return;
+                }
+            }
         }
-        // Force proceed (declare bankruptcy via backend)
+
+        // Force proceed (bankrupt)
         if (btnDebtForce.isClicked()) {
             debtMode    = false;
             debtLanding = false;
@@ -1372,17 +1497,15 @@ void GameScreen::update(float dt) {
         }
 
         // ── skill card buttons ────────────────────────────────────────────
-        if (!p->isSkillUsed()) {
+        if (!p->isSkillUsed() && !skillCardConfirmPending) {
             int handSz = p->getHandSize();
             for (int ci = 0; ci < handSz && ci < 4; ci++) {
                 if (btnSkillCards[ci].isClicked()) {
                     auto* card = p->getHandCard(ci);
                     if (!card) continue;
-                    std::string t = card->getCardType();
-                    if (t == "TELEPORT")    useCardWithTarget(ci, CardMode::TELEPORT_SELECT);
-                    else if (t == "LASSO")  useCardWithTarget(ci, CardMode::LASSO_SELECT);
-                    else if (t == "DEMOLITION") useCardWithTarget(ci, CardMode::DEMOLITION_SELECT);
-                    else                    useCardImmediate(ci);
+                    skillCardConfirmPending = true;
+                    skillCardConfirmIdx = ci;
+                    return;
                 }
             }
         }
@@ -1725,6 +1848,72 @@ void GameScreen::draw() {
 
     // selection popup (LASSO / DEMOLITION)
     if (showSelPopup) drawSelPopup();
+
+    // skill card confirmation popup
+    if (skillCardConfirmPending && gs) {
+        int sw2 = GetScreenWidth(), sh2 = GetScreenHeight();
+        DrawRectangle(0, 0, sw2, sh2, {0,0,0,180});
+
+        float popW = 380.0f * globalScale;
+        float popH = 220.0f * globalScale;
+        float popX = (sw2 - popW) / 2.0f;
+        float popY = (sh2 - popH) / 2.0f;
+
+        DrawRectangleRounded({popX, popY, popW, popH}, 0.12f, 8, {255,243,210,255});
+        DrawRectangleRoundedLines({popX, popY, popW, popH}, 0.12f, 8, {80,40,35,255});
+
+        Player* p = gs->currentTurnPlayer();
+        if (p && skillCardConfirmIdx >= 0) {
+            auto* card = p->getHandCard(skillCardConfirmIdx);
+            if (card) {
+                // Big card title centered
+                int titleSz = (int)(22 * globalScale);
+                std::string title = card->getCardType() + " CARD";
+                int tw = MeasureText(title.c_str(), titleSz);
+                DrawText(title.c_str(), (int)(popX + (popW - tw)/2.0f),
+                         (int)(popY + 24.0f*globalScale), titleSz, {148,73,68,255});
+
+                // Description — bigger, centered
+                int descSz = (int)(14 * globalScale);
+                std::string desc = card->describe();
+                float maxDescW = popW - 48.0f * globalScale;
+                float descY = popY + 65.0f * globalScale;
+
+                // simple word wrap
+                std::vector<std::string> lines;
+                std::string current;
+                for (char c : desc) {
+                    current += c;
+                    if (c == ' ') {
+                        if (MeasureText(current.c_str(), descSz) > maxDescW) {
+                            size_t sp = current.find_last_of(' ');
+                            if (sp != std::string::npos && sp > 0) {
+                                lines.push_back(current.substr(0, sp));
+                                current = current.substr(sp + 1);
+                            }
+                        }
+                    }
+                }
+                if (!current.empty()) lines.push_back(current);
+                if (lines.empty() && !desc.empty()) lines.push_back(desc);
+
+                float totalDescH = lines.size() * (descSz + 4);
+                float descStartY = popY + 70.0f*globalScale;
+                for (const auto& ln : lines) {
+                    int lw = MeasureText(ln.c_str(), descSz);
+                    DrawText(ln.c_str(), (int)(popX + (popW - lw)/2.0f),
+                             (int)descStartY, descSz, {80,40,35,255});
+                    descStartY += descSz + 4;
+                }
+            }
+        }
+        btnSkillConfirmUse.draw();
+        btnSkillConfirmCancel.draw();
+        // manual outline for cancel (transparent bg needs visible border)
+        DrawRectangleLinesEx({btnSkillConfirmCancel.getX(), btnSkillConfirmCancel.getY(),
+                              btnSkillConfirmCancel.getWidth(), btnSkillConfirmCancel.getHeight()},
+                             1.5f, {80,40,35,255});
+    }
 
     // PPH popup
     if (pphPending) {
@@ -2103,12 +2292,12 @@ void GameScreen::drawPlayTab(float cardX, float cardScale) {
         DrawRectangleLinesEx({btn.getX(), btn.getY(), btn.getWidth(), btn.getHeight()},
                              1.5f, border);
     };
-    drawBtn(btnBuildHouse);
     drawBtn(btnMortgage);
     drawBtn(btnRedeem);
+    drawBtn(btnBuildHouse);
 
     // skill cards section — below action buttons
-    float cardSectionY = btnRedeem.getY() + btnRedeem.getHeight() + 10.0f * globalScale;
+    float cardSectionY = btnBuildHouse.getY() + btnBuildHouse.getHeight() + 10.0f * globalScale;
     drawSkillCardSection(cardX, cardScale, cardSectionY);
 }
 
@@ -2667,6 +2856,7 @@ void GameScreen::drawAuctionUI(float /*cardX*/, float /*cardScale*/) {
 // ══════════════════════════════════════════════════════════════════════════════
 void GameScreen::useCardImmediate(int cardIdx) {
     Player* p = gs->currentTurnPlayer();
+    if (!p) return;
     cardProc->cmdGunakanKemampuan(*p, cardIdx);
     // if card was MOVE, player position changed — apply landing
     drainAndStoreEvents();
@@ -2698,7 +2888,7 @@ void GameScreen::useCardWithTarget(int cardIdx, CardMode mode) {
         if (opts.empty()) { pushLog("Tidak ada pemain lain."); return; }
         pendingCardIdx = cardIdx;
         cardMode       = mode;
-        openSelPopup("LASSO — Pilih Pemain", opts, SelAction::LASSO);
+        openSelPopup("Pilih Pemain", opts, SelAction::LASSO);
     } else if (mode == CardMode::DEMOLITION_SELECT) {
         // step 1: pick opponent who has buildings
         std::vector<std::string> opts;
@@ -2717,6 +2907,7 @@ void GameScreen::useCardWithTarget(int cardIdx, CardMode mode) {
 
 void GameScreen::finishTeleport(int tileIdx) {
     Player* p = gs->currentTurnPlayer();
+    if (!p) { cardMode = CardMode::NONE; pendingCardIdx = -1; return; }
     p->removeHandCard(pendingCardIdx);
     SkillCardManager::applyTeleport(*p, tileIdx, gs->board.getTileCount());
     p->setSkillUsed(true);
@@ -2730,7 +2921,8 @@ void GameScreen::finishTeleport(int tileIdx) {
 
 void GameScreen::finishLasso(int playerIdx) {
     Player* p = gs->currentTurnPlayer();
-    // find the target player by index among non-bankrupt, non-self
+    if (!p) { cardMode = CardMode::NONE; pendingCardIdx = -1; return; }
+
     std::vector<Player*> others;
     for (auto* pl : gs->players)
         if (pl != p && pl->getStatus() != "BANKRUPT") others.push_back(pl);
@@ -2738,12 +2930,23 @@ void GameScreen::finishLasso(int playerIdx) {
         cardMode = CardMode::NONE; pendingCardIdx = -1; return;
     }
     Player* target = others[playerIdx];
+    int destTile = p->getCurrTile();
     p->removeHandCard(pendingCardIdx);
-    SkillCardManager::applyLasso(*p, *target, p->getCurrTile());
+    SkillCardManager::applyLasso(*p, *target, destTile);
     p->setSkillUsed(true);
-    gs->addLog(*p, "GUNAKAN_KEMAMPUAN", "LassoCard -> " + target->getUsername());
-    pushLog(target->getUsername() + " ditarik ke " + gs->tiles[p->getCurrTile()]->getTileName());
+    gs->addLog(*p, "GUNAKAN_KEMAMPUAN",
+               "LassoCard -> " + target->getUsername()
+               + " ke " + gs->tiles[destTile]->getTileCode());
+    pushLog(target->getUsername() + " ditarik ke " + gs->tiles[destTile]->getTileName());
+
+    // Defer landing resolution to the target player's next turn
+    // (they will resolve the tile effect before rolling dice)
+    gs->deferredLandings[target] = destTile;
     drainAndStoreEvents();
+    checkNewCardLogs((int)gs->transaction_log.size() - 10 < 0 ? 0
+                     : (int)gs->transaction_log.size() - 10);
+    gameLoop->checkWinGui();
+    if (gs->game_over) gameOverOverlay = true;
     cardMode = CardMode::NONE; pendingCardIdx = -1;
 }
 
@@ -2800,8 +3003,7 @@ void GameScreen::drawSkillCardSection(float cardX, float cardScale, float startY
     for (int i = 0; i < handSz && i < 4; i++) {
         auto* card = p->getHandCard(i);
         if (!card) continue;
-        std::string label = card->getCardType() + ": " + card->describe();
-        if (label.size() > 28) label = label.substr(0, 28) + "..";
+        std::string label = card->getCardType() + " CARD";
         Color bg    = used ? Color{210,210,210,255} : Color{255,235,202,255};
         Color hover = used ? Color{210,210,210,255} : Color{255,220,180,255};
         Color fg    = used ? Color{170,170,170,255} : Color{80,40,35,255};
@@ -3049,22 +3251,38 @@ void GameScreen::drawDebtMode(float cardX, float cardScale) {
     int   labSz = (int)(13 * globalScale);
     DrawText("CARA BAYAR", (int)boxX, (int)labY, labSz, {148,73,68,255});
 
-    // GADAI / LELANG buttons
-    auto drawDebtBtn = [&](Button& btn, Color border) {
-        btn.draw();
-        DrawRectangleLinesEx({btn.getX(), btn.getY(), btn.getWidth(), btn.getHeight()},
-                             1.5f, border);
-    };
-    drawDebtBtn(btnDebtGadai,  {150,100,30,255});
-    drawDebtBtn(btnDebtLelang, {50,90,170,255});
+    // GADAI only (no LELANG in debt mode)
+    btnDebtGadai.draw();
+    DrawRectangleLinesEx({btnDebtGadai.getX(), btnDebtGadai.getY(),
+                          btnDebtGadai.getWidth(), btnDebtGadai.getHeight()},
+                         1.5f, {150,100,30,255});
 
-    // force button
-    bool canAfford = (p && p->getBalance() >= debtAmount);
-    bool noOptions = (p && p->getOwnedProperties().empty());
-    if (noOptions || canAfford) {
+    // hint for shield card
+    if (debtLanding && p && !p->isSkillUsed() && p->getHandSize() > 0) {
+        bool hasShield = false;
+        for (int i = 0; i < p->getHandSize(); i++) {
+            auto* c = p->getHandCard(i);
+            if (c && c->getCardType() == "SHIELD") { hasShield = true; break; }
+        }
+        if (hasShield) {
+            int shSz = (int)(11 * globalScale);
+            DrawText("(Gunakan SHIELD dari Kartu Kemampuan untuk batalkan sewa)",
+                     (int)boxX, (int)(labY + labSz + 4.0f*globalScale), shSz, {70,120,180,255});
+        }
+    }
+
+    // force / bankrupt button — only if no properties left
+    bool debtResolved = (debtAmount == 0) ? (p && p->getBalance() >= 0)
+                                          : (p && p->getBalance() >= debtAmount);
+    bool noOptions = !debtResolved && p && p->getOwnedProperties().empty();
+    if (noOptions) {
         btnDebtForce.setDisabled(false);
         btnDebtForce.draw();
     }
+
+    // skill card section still drawn so SHIELD/DISCOUNT can be clicked
+    float skillY = btnDebtGadai.getY() + btnDebtGadai.getHeight() + 10.0f * globalScale;
+    drawSkillCardSection(cardX, cardScale, skillY);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

@@ -42,6 +42,7 @@ public:
     bool game_over_by_bankruptcy;
 
     std::map<Player*, int> jail_turns;
+    std::map<Player*, int> deferredLandings;  // player → tile they must land on before their turn
 
     std::vector<ChanceCard*> chance_cards;
     std::vector<CommunityChestCard*> community_cards;

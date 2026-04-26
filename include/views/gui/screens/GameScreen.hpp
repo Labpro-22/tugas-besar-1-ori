@@ -134,6 +134,12 @@ private:
     std::string cardSelectMsg;         // hint text shown while selecting
     Button      btnSkillCards[4];      // per card in current player's hand
 
+    // ── Skill-card confirmation popup ──────────────────────────────────────
+    bool        skillCardConfirmPending = false;
+    int         skillCardConfirmIdx     = -1;
+    Button      btnSkillConfirmUse;
+    Button      btnSkillConfirmCancel;
+
     // For LASSO / DEMOLITION / GADAI / TEBUS selection popup
     enum class SelAction { NONE, LASSO, DEMOLITION_PLAYER, DEMOLITION_PROP, GADAI, TEBUS };
     bool        showSelPopup = false;
