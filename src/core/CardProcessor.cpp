@@ -104,12 +104,12 @@ void CardProcessor::drawAndResolveCommunityChest(Player &p) {
             if (p.getBalance() < 0) {
                 int debt = -p.getBalance();
                 int maxLiq = PropertyManager::calculateMaxLiquidation(p);
-                if (maxLiq + p.getBalance() < 0) {
+                if (maxLiq < 0) {
                     cout << p.getUsername() << " tidak mampu membayar tagihan kartu Dana Umum! Bangkrut!\n";
                     bankruptcy.processBankruptcy(p);
                 } else {
                     cout << "Saldo negatif M" << debt << ". Likuidasi paksa untuk menutup tagihan kartu.\n";
-                    PropertyManager::autoLiquidate(p, state.board, debt);
+                    PropertyManager::autoLiquidate(p, state.board, 0);
                     if (p.getBalance() < 0) {
                         cout << p.getUsername() << " tetap tidak mampu membayar setelah likuidasi. Bangkrut!\n";
                         bankruptcy.processBankruptcy(p);
@@ -137,14 +137,14 @@ void CardProcessor::drawSkillCardAtTurnStart(Player &p) {
     } else if (kind == "DISCOUNT") {
         uniform_int_distribution<int> pctDist(10, 50);
         card = new DiscountCard(pctDist(rng));
-    } else if (kind == "SHIELD") { 
+    } else if (kind == "SHIELD") {
         card = new ShieldCard();
-    } else if (kind == "TELEPORT") { 
+    } else if (kind == "TELEPORT") {
         card = new TeleportCard();
-    } else if (kind == "LASSO") { 
+    } else if (kind == "LASSO") {
         card = new LassoCard();
-    } else { 
-        card = new DemolitionCard(); 
+    } else {
+        card = new DemolitionCard();
     }
 
     state.skill_cards.push_back(card);
@@ -175,9 +175,9 @@ void CardProcessor::drawSkillCardAtTurnStart(Player &p) {
 
 void CardProcessor::cmdGunakanKemampuan(Player &p, int index) {
     SpecialPowerCard *card = p.getHandCard(index);
-    if (!card) { 
-        cout << "Kartu tidak ditemukan.\n"; 
-        return; 
+    if (!card) {
+        cout << "Kartu tidak ditemukan.\n";
+        return;
     }
     if (p.isSkillUsed()) {
         cout << "Kamu sudah menggunakan kartu kemampuan pada giliran ini!\n";
@@ -214,9 +214,9 @@ void CardProcessor::cmdGunakanKemampuan(Player &p, int index) {
                 others.push_back(pl);
             }
         }
-        if (others.empty()) { 
-            cout << "Tidak ada pemain lain.\n"; 
-            return; 
+        if (others.empty()) {
+            cout << "Tidak ada pemain lain.\n";
+            return;
         }
         cout << "LassoCard: Tarik 1 pemain lain ke petak Anda.\n";
         for (int i = 0; i < static_cast<int>(others.size()); i++) {
@@ -255,9 +255,9 @@ void CardProcessor::cmdGunakanKemampuan(Player &p, int index) {
                 opponentsWithBuildings.push_back({pl, built});
             }
         }
-        if (opponentsWithBuildings.empty()) { 
-            cout << "Tidak ada bangunan lawan.\n"; 
-            return; 
+        if (opponentsWithBuildings.empty()) {
+            cout << "Tidak ada bangunan lawan.\n";
+            return;
         }
         cout << "DemolitionCard: Hancurkan 1 bangunan lawan.\n";
         for (int i = 0; i < static_cast<int>(opponentsWithBuildings.size()); i++) {
@@ -302,17 +302,17 @@ void CardProcessor::cmdGunakanKemampuan(Player &p, int index) {
 
 bool CardProcessor::cmdFestival(Player &p, const string &code) {
     if (state.tiles[p.getCurrTile()]->getTileType() != "FESTIVAL") {
-        cout << "Hanya bisa di petak Festival.\n"; 
+        cout << "Hanya bisa di petak Festival.\n";
         return false;
     }
     Tile *t = state.board.getTileByCode(code);
-    if (!t) { 
-        cout << "Kode '" << code << "' tidak ditemukan.\n"; 
-        return false; 
+    if (!t) {
+        cout << "Kode '" << code << "' tidak ditemukan.\n";
+        return false;
     }
     auto *prop = dynamic_cast<PropertyTile*>(t);
-    if (!prop || prop->getTileOwner() != &p) { 
-        cout << "Bukan properti Anda.\n"; 
+    if (!prop || prop->getTileOwner() != &p) {
+        cout << "Bukan properti Anda.\n";
         return false;
     }
 

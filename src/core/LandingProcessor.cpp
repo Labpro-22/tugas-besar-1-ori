@@ -298,7 +298,7 @@ void LandingProcessor::handleTax(Player &p, const string &taxType) {
         state.addLog(p, "BAYAR_PAJAK", taxType + " M" + to_string(amt));
     } else {
         int maxLiq = PropertyManager::calculateMaxLiquidation(p);
-        if (p.getBalance() + maxLiq < amt) {
+        if (maxLiq < amt) {
             if (isBot || !bankruptcyProc) {
                 cout << "Tidak cukup aset untuk membayar pajak M" << amt << ". Bangkrut ke Bank!\n";
                 if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
@@ -363,7 +363,7 @@ void LandingProcessor::drawAndResolveChance(Player &p) {
         // If card deducted enough to push balance negative but player can still recover
         if (p.getBalance() < 0 && p.getStatus() != "BANKRUPT") {
             int maxLiq = PropertyManager::calculateMaxLiquidation(p);
-            if (maxLiq + p.getBalance() >= 0)
+            if (maxLiq >= 0)
                 throw InsufficientMoneyException("CARD:" + to_string(-p.getBalance()));
             else if (bankruptcyProc)
                 bankruptcyProc->processBankruptcy(p);
@@ -392,7 +392,7 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
             CardManager::resolveCardEffect(*card, p, state.players);
             if (p.getBalance() < 0) {
                 int maxLiq = PropertyManager::calculateMaxLiquidation(p);
-                if (maxLiq + p.getBalance() < 0) {
+                if (maxLiq < 0) {
                     cout << p.getUsername() << " tidak mampu membayar tagihan kartu Dana Umum! Bangkrut!\n";
                     if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
                 } else {
@@ -403,7 +403,7 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
 #else
                     int debt = -p.getBalance();
                     cout << "Saldo negatif M" << debt << ". Likuidasi paksa untuk menutup tagihan kartu.\n";
-                    PropertyManager::autoLiquidate(p, state.board, debt);
+                    PropertyManager::autoLiquidate(p, state.board, 0);
                     if (p.getBalance() < 0) {
                         cout << p.getUsername() << " tetap tidak mampu membayar setelah likuidasi. Bangkrut!\n";
                         if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
