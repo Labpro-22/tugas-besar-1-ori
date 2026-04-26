@@ -159,7 +159,58 @@ void LandingProcessor::handlePropertyLanding(Player &p, PropertyTile &prop) {
             state.addLog(p, "OTOMATIS",
                    prop.getTileName() + " (" + prop.getTileCode() + ") jadi milik " + p.getUsername());
         } else {
-            cout << "Properti belum dimiliki. Gunakan BELI untuk membeli, atau ketik SELESAI untuk masuk lelang otomatis.\n";
+            // STREET tanpa pemilik: otomatis tampilkan akta + tawaran beli
+            // (sesuai spesifikasi BELI). Untuk bot dan GUI, biarkan handler
+            // lain (BotController / GUI) yang memutuskan via cmdBeli.
+            bool isBot = (dynamic_cast<Bot*>(&p) != nullptr);
+#ifdef GUI_MODE
+            (void)isBot;
+            cout << "Properti " << prop.getTileName() << " (" << prop.getTileCode()
+                 << ") tersedia. Gunakan BELI untuk membeli atau lewati untuk dilelang.\n";
+#else
+            if (isBot) {
+                cout << "Properti " << prop.getTileName() << " (" << prop.getTileCode()
+                     << ") tersedia. Bot akan memutuskan.\n";
+            } else {
+                state.formatter.printAkta(prop, state.board, state.config);
+                int price = prop.getBuyPrice();
+                if (p.getDiscountActive() > 0.0f) {
+                    price = static_cast<int>(price * (1.0f - p.getDiscountActive()));
+                }
+                cout << "Uang kamu saat ini: M" << p.getBalance() << "\n";
+
+                bool canAfford = (p.getBalance() >= price);
+                if (!canAfford) {
+                    cout << "Saldo tidak cukup untuk membeli (perlu M" << price << "). Properti masuk lelang.\n";
+                    if (bankruptcyProc) bankruptcyProc->handleAutoAuction(p);
+                } else {
+                    cout << "Apakah kamu ingin membeli properti ini seharga M" << price << "? (y/n): ";
+                    char ans = 0;
+                    while (true) {
+                        if (!(cin >> ans)) {
+                            cin.clear();
+                            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                            cout << "  Input tidak valid. (y/n): ";
+                            continue;
+                        }
+                        ans = static_cast<char>(toupper(static_cast<unsigned char>(ans)));
+                        if (ans == 'Y' || ans == 'N') break;
+                        cout << "  Input tidak valid. (y/n): ";
+                    }
+                    if (ans == 'Y') {
+                        p += -price;
+                        p.addOwnedProperty(&prop);
+                        state.recomputeMonopolyForGroup(prop.getColorGroup());
+                        cout << prop.getTileName() << " kini menjadi milikmu!\n";
+                        cout << "Uang tersisa: M" << p.getBalance() << "\n";
+                        state.addLog(p, "BELI", prop.getTileName() + " (" + prop.getTileCode() + ") M" + to_string(price));
+                    } else {
+                        cout << "Properti ini akan masuk ke sistem lelang...\n";
+                        if (bankruptcyProc) bankruptcyProc->handleAutoAuction(p);
+                    }
+                }
+            }
+#endif
         }
     } else if (owner == &p) {
         cout << "Ini properti Anda sendiri.\n";
@@ -351,7 +402,13 @@ void LandingProcessor::drawAndResolveCommunityChest(Player &p) {
                     state.addLog(p, "KARTU", "Dana Umum: " + card->describe());
                     throw InsufficientMoneyException("CARD:" + to_string(-p.getBalance()));
 #else
-                    cout << "Saldo habis setelah efek kartu. Likuidasi mungkin diperlukan.\n";
+                    int debt = -p.getBalance();
+                    cout << "Saldo negatif M" << debt << ". Likuidasi paksa untuk menutup tagihan kartu.\n";
+                    PropertyManager::autoLiquidate(p, state.board, debt);
+                    if (p.getBalance() < 0) {
+                        cout << p.getUsername() << " tetap tidak mampu membayar setelah likuidasi. Bangkrut!\n";
+                        if (bankruptcyProc) bankruptcyProc->processBankruptcy(p);
+                    }
 #endif
                 }
             }

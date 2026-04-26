@@ -177,23 +177,26 @@ void Player::clearTurnModifiers()
     shield_active = false;
 }
 
-int Player::calculateNetWorth() const 
+int Player::calculateNetWorth() const
 {
+    // Spec: total kekayaan = uang tunai + harga beli seluruh properti
+    // (termasuk yang digadaikan) + harga beli seluruh bangunan yang telah
+    // didirikan (harga penuh, bukan separuh).
     int total = balance;
-    
-    for (auto *p : owned_properties) 
+
+    for (auto *p : owned_properties)
     {
-        if (p) 
+        if (!p) continue;
+        total += p->getBuyPrice();
+        if (p->getTileType() == "STREET" && p->getLevel() > 0)
         {
-            total += p->getBuyPrice();
-            if (p->getTileType() == "STREET" && p->getLevel() > 0) 
-            {
-                int bldCost = (p->getLevel() >= 5) ? p->getHotelCost() : p->getHouseCost() * p->getLevel();
-                total += bldCost / 2;
-            }
+            int bldCost = (p->getLevel() >= 5)
+                ? p->getHotelCost()
+                : p->getHouseCost() * p->getLevel();
+            total += bldCost;
         }
     }
-    
+
     return total;
 }
 

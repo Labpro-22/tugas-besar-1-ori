@@ -62,8 +62,51 @@ BankruptcyProcessor::BankruptcyProcessor(GameState &s, LandingProcessor &lp)
 
 void BankruptcyProcessor::processBankruptcy(Player &p, Player *creditor) {
     if (creditor && creditor != &p) {
+        // Sell all buildings back to bank at half price (cash goes to debtor)
+        auto props = p.getOwnedProperties();
+        for (auto *prop : props) {
+            if (!prop) continue;
+            int lvl = prop->getLevel();
+            if (lvl > 0) {
+                int refund = (lvl >= 5)
+                    ? (prop->getHotelCost() / 2)
+                    : ((prop->getHouseCost() * lvl) / 2);
+                if (refund > 0) p += refund;
+                prop->setLevel(0);
+                cout << "Bangunan di " << prop->getTileCode() << " dijual ke Bank seharga M" << refund << ".\n";
+            }
+        }
+
+        // Transfer all remaining cash to creditor
+        int cash = p.getBalance();
+        if (cash > 0) {
+            p += -cash;
+            *creditor += cash;
+            cout << "Uang sisa M" << cash << " diserahkan ke " << creditor->getUsername() << ".\n";
+        }
+
+        // Transfer property ownership to creditor (keep mortgage status)
+        std::vector<std::string> groupsToRecompute;
+        auto propsToTransfer = p.getOwnedProperties();
+        for (auto *prop : propsToTransfer) {
+            if (!prop) continue;
+            std::string cg = prop->getColorGroup();
+            std::string code = prop->getTileCode();
+            prop->setMonopolized(false);
+            prop->setFestivalState(1, 0);
+            p.removeOwnedProperty(code);
+            creditor->addOwnedProperty(prop);
+            groupsToRecompute.push_back(cg);
+            cout << "Properti " << code << " dialihkan ke " << creditor->getUsername() << ".\n";
+        }
+
+        p.setStatus("BANKRUPT");
         state.events.processBankruptcy(p, creditor);
         state.events.flushEventsTo(cout);
+
+        for (const auto &cg : groupsToRecompute) {
+            state.recomputeMonopolyForGroup(cg);
+        }
     } else {
         p.setStatus("BANKRUPT");
         int cash = p.getBalance();

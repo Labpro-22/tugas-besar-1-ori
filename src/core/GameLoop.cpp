@@ -237,20 +237,21 @@ void GameLoop::applyPropertyState(const GameStates::SaveState &sstate) {
 
         for (const auto &cs : ps.hand_cards) {
             SpecialPowerCard *card = nullptr;
-            if (cs.type == "MOVE") {
+            const std::string &t = cs.type;
+            if (t == "MOVE" || t == "MoveCard") {
                 int val = cs.value.empty() ? 3 : std::stoi(cs.value);
                 card = new MoveCard(val, boardSize);
-            } else if (cs.type == "DISCOUNT") {
+            } else if (t == "DISCOUNT" || t == "DiscountCard") {
                 int val = cs.value.empty() ? 50 : std::stoi(cs.value);
                 card = new DiscountCard(val);
-            } else if (cs.type == "SHIELD") { 
+            } else if (t == "SHIELD" || t == "ShieldCard") {
                 card = new ShieldCard();
-            } else if (cs.type == "TELEPORT") { 
+            } else if (t == "TELEPORT" || t == "TeleportCard") {
                 card = new TeleportCard();
-            } else if (cs.type == "LASSO") { 
+            } else if (t == "LASSO" || t == "LassoCard") {
                 card = new LassoCard();
-            } else if (cs.type == "DEMOLITION") { 
-                card = new DemolitionCard(); 
+            } else if (t == "DEMOLITION" || t == "DemolitionCard") {
+                card = new DemolitionCard();
             }
 
             if (card) {
@@ -316,10 +317,18 @@ GameStates::SaveState GameLoop::buildSaveState() const {
 
         for (auto *c : p->getHandCards()) {
             GameStates::CardState cs;
-            cs.type = c->getCardType();
-            if (cs.type == "MOVE") {
+            std::string raw = c->getCardType();
+            // Spec format: "MoveCard", "ShieldCard", etc.
+            if (raw == "MOVE")            cs.type = "MoveCard";
+            else if (raw == "DISCOUNT")   cs.type = "DiscountCard";
+            else if (raw == "SHIELD")     cs.type = "ShieldCard";
+            else if (raw == "TELEPORT")   cs.type = "TeleportCard";
+            else if (raw == "LASSO")      cs.type = "LassoCard";
+            else if (raw == "DEMOLITION") cs.type = "DemolitionCard";
+            else                          cs.type = raw;
+            if (raw == "MOVE") {
                 cs.value = std::to_string(static_cast<MoveCard*>(c)->getMoveValue());
-            } else if (cs.type == "DISCOUNT") {
+            } else if (raw == "DISCOUNT") {
                 cs.value = std::to_string(static_cast<DiscountCard*>(c)->getDiscountValue());
             }
             ps.hand_cards.push_back(cs);
@@ -349,7 +358,13 @@ GameStates::SaveState GameLoop::buildSaveState() const {
 
         GameStates::PropertyState ps;
         ps.tile_code = prop->getTileCode();
-        ps.type = prop->getTileType();
+        {
+            std::string t = prop->getTileType();
+            std::string lower;
+            lower.reserve(t.size());
+            for (char c : t) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            ps.type = lower;
+        }
         ps.owner_username = prop->getTileOwner() ? [&]() {
             std::string name = prop->getTileOwner()->getUsername();
             std::replace(name.begin(), name.end(), ' ', '_');

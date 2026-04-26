@@ -257,7 +257,13 @@ void OutputFormatter::printBoard(Board &b, vector<Player*> players, int turn, in
 
     // ── TILE BUILDER ──────────────────────────────────────────────────────────
     auto mkTile = [&](int idx, int w, int h) {
+        if (idx < 0 || idx >= total) {
+            return renderTile("", "", "", "FILLER", w, h);
+        }
         Tile* t = b.getTileByIndex(idx);
+        if (!t) {
+            return renderTile("", "", "", "FILLER", w, h);
+        }
         PropertyTile* pt = dynamic_cast<PropertyTile*>(t);
         string color_group = pt ? pt->getColorGroup() : "";
         string color_code  = getColorCode(color_group, t->getTileType());
@@ -441,11 +447,20 @@ void OutputFormatter::printProperty(Player &p, Board &b){
         string color = getGroupColor(group);
         cout << color << "[" << group << "]" << reset << "\n";
 for(auto& tile : tiles){
-        string status = tile->isMortgage() ? "MORTGAGED [M]" : "OWNED"; //TODO: adjust to actual method name
+        string status = tile->isMortgage() ? "MORTGAGED [M]" : "OWNED";
         string label = tile->getTileName() + " (" + tile->getTileCode() + ")";
         string priceStr = "M" + to_string(tile->getBuyPrice());
-        cout << "  - " << leftOut(label, 30) << leftOut(priceStr, 8) << status << "\n";
-        total += tile->getBuyPrice(); //TODO: adjust to actual method name
+        string buildStr;
+        if (tile->getTileType() == "STREET") {
+            int lvl = tile->getLevel();
+            if (lvl >= 5)      buildStr = "Hotel";
+            else if (lvl > 0)  buildStr = to_string(lvl) + " rumah";
+            else               buildStr = "-";
+        } else {
+            buildStr = "-";
+        }
+        cout << "  - " << leftOut(label, 30) << leftOut(buildStr, 10) << leftOut(priceStr, 8) << status << "\n";
+        total += tile->getBuyPrice();
         }
         cout << "\n";
     }
@@ -511,6 +526,17 @@ void OutputFormatter::printWin(vector<Player> &ps, bool is_bankruptcy){
     vector<Player*> candidates = activeOnly();
     if (candidates.empty()) for (auto &p : ps) candidates.push_back(&p);
 
+    // Primary ranking: total kekayaan via Player::operator< / operator>
+    {
+        vector<Player*> top;
+        for (auto *p : candidates) {
+            if (top.empty()) { top.push_back(p); continue; }
+            if (*top.front() < *p)      { top.clear(); top.push_back(p); }
+            else if (!(*top.front() > *p)) top.push_back(p);
+        }
+        candidates = top;
+    }
+
     auto filterMaxBy = [&](vector<Player*> &v, auto getter) {
         int best = INT_MIN;
         for (auto *p : v) { int x = getter(p); if (x > best) best = x; }
@@ -519,7 +545,8 @@ void OutputFormatter::printWin(vector<Player> &ps, bool is_bankruptcy){
         v = out;
     };
 
-    filterMaxBy(candidates, [](Player *p){ return p->getBalance(); });
+    if (candidates.size() > 1)
+        filterMaxBy(candidates, [](Player *p){ return p->getBalance(); });
     if (candidates.size() > 1)
         filterMaxBy(candidates, [](Player *p){ return static_cast<int>(p->getOwnedProperties().size()); });
     if (candidates.size() > 1)

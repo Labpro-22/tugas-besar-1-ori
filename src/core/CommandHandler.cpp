@@ -248,15 +248,15 @@ void CommandHandler::executeTurn(Player &p) {
         } else if (cmd == "CETAK_AKTA") {
             string code; cin >> code;
             Tile *t = state.board.getTileByCode(code);
-            if (t) { 
+            if (t) {
                 auto *prop = dynamic_cast<PropertyTile*>(t);
                 if (prop) {
                     state.formatter.printAkta(*prop, state.board, state.config);
                 } else {
-                    cout << "Bukan properti.\n"; 
+                    cout << "Petak \"" << code << "\" tidak ditemukan atau bukan properti.\n";
                 }
             } else {
-                cout << "Kode tidak ditemukan.\n";
+                cout << "Petak \"" << code << "\" tidak ditemukan atau bukan properti.\n";
             }
         } else if (cmd == "CETAK_PROPERTI") {
             state.formatter.printProperty(p, state.board);
