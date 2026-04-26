@@ -162,6 +162,9 @@ void CardProcessor::drawSkillCardAtTurnStart(Player &p) {
             p.removeHandCard(dropIdx);
             state.addLog(p, "DROP_KEMAMPUAN", to_string(dropIdx + 1));
         } else {
+#ifdef GUI_MODE
+            cout << "Kartu penuh! Pilih kartu untuk dibuang melalui popup.\n";
+#else
             for (int i = 0; i < p.getHandSize(); i++) {
                 auto *c = p.getHandCard(i);
                 cout << "  " << (i + 1) << ". " << (c ? c->describe() : "(?)") << "\n";
@@ -169,6 +172,7 @@ void CardProcessor::drawSkillCardAtTurnStart(Player &p) {
             int idx = readInt("Pilih nomor kartu yang ingin dibuang: ", 1, p.getHandSize());
             p.removeHandCard(idx - 1);
             state.addLog(p, "DROP_KEMAMPUAN", to_string(idx));
+#endif
         }
     }
 }

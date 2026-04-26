@@ -38,6 +38,7 @@ private:
     Texture2D aktaTexture;
     Texture2D chanceCardTex;
     Texture2D communityCardTex;
+    Texture2D lelangBackTexture;
 
     // ── Static tile display data ──────────────────────────────────────────
     struct TileInfo {
@@ -98,7 +99,9 @@ private:
 
     // ── Event log (shown in info box) ────────────────────────────────────
     std::deque<std::string> eventLog;  // newest at front
-    static constexpr int EVENT_LOG_MAX = 8;
+    static constexpr int EVENT_LOG_MAX = 20;
+    int txLogCursor = 0;
+    float logScroll = 0.0f;
     void pushLog(const std::string& msg);
 
     // ── Generic popup ─────────────────────────────────────────────────────
@@ -108,10 +111,9 @@ private:
 
     // ── Card draw popup (Kesempatan / Dana Umum) ──────────────────────────
     bool        showCardPopup  = false;
-    bool        cardPopupIsChance = true;  // true=Kesempatan, false=Dana Umum
+    bool        cardPopupIsChance = true;
     std::string cardPopupDesc;
     Button      btnCardPopupOk;
-    void checkNewCardLogs(int logBefore);
     void drawCardPopup();
 
     // ── Auction state ─────────────────────────────────────────────────────
@@ -133,6 +135,22 @@ private:
     int         pendingCardIdx = -1;   // card index being used
     std::string cardSelectMsg;         // hint text shown while selecting
     Button      btnSkillCards[4];      // per card in current player's hand
+
+    // ── Skill-card confirmation popup ──────────────────────────────────────
+    bool        skillCardConfirmPending = false;
+    int         skillCardConfirmIdx     = -1;
+    Button      btnSkillConfirmUse;
+    Button      btnSkillConfirmCancel;
+
+    // ── Drop-card popup (hand > 3, must discard one) ──────────────────────
+    bool               dropCardPending    = false;
+    bool               dropCardConfirm    = false;   // confirmation step
+    int                dropCardConfirmIdx = -1;
+    std::vector<Button> btnDropCards;
+    Button             btnDropYes;
+    Button             btnDropNo;
+    void drawDropCardPopup();
+    void checkDropCard();
 
     // For LASSO / DEMOLITION / GADAI / TEBUS selection popup
     enum class SelAction { NONE, LASSO, DEMOLITION_PLAYER, DEMOLITION_PROP, GADAI, TEBUS };
@@ -156,6 +174,9 @@ private:
     int  pphPctAmt  = 0;
     Button btnPphFlat;
     Button btnPphPct;
+    // PPH debt: amount chosen but couldn't afford — pay when debtMode resolves
+    int         pphDebtAmt  = 0;
+    std::string pphDebtDesc;
 
     // ── Build popup ───────────────────────────────────────────────────────
     bool buildMode = false;
@@ -219,9 +240,12 @@ private:
     bool checkFestival(Player& p);
     Color getColorGroupColor(const std::string& group) const;
     bool checkPPH(Player& p);   // true if PPH popup triggered
+    // Apply landing for skill-card moves (teleport, move card) — handles buy/auction popup
+    void resolveCardLanding(Player& p, int tileIdx);
 
     // Auction
-    void startAuction();
+    void startAuction(PropertyTile* prop = nullptr);  // prop=nullptr → use current tile
+    void startNextBankruptAuction();
     void updateAuction();
     void drawAuctionUI(float cardX, float cardScale);
 
