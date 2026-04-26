@@ -655,8 +655,8 @@ void GameScreen::computeLayout() {
     // counter buttons positioned inside popup — rebuilt in draw() via loadAsText each frame
 
     float boxPad  = 12.0f * globalScale;
-    float abBoxX  = cardX + boxPad + 20.0f;
-    float abBoxY  = btnY + btnH + boxPad + 10.0f;
+    float abBoxX  = cardX + boxPad + 20.0f * globalScale;
+    float abBoxY  = btnY + btnH + boxPad + 10.0f * globalScale;
     float abBoxW  = cardPanel.width * cardScale - 6.0f * boxPad;
     float labelH  = 14.0f * globalScale;
     float abtnY   = abBoxY + 120.0f * globalScale + 10.0f * globalScale + labelH + 8.0f * globalScale;
@@ -1872,12 +1872,12 @@ void GameScreen::draw() {
         if (activeIdx >= 0 && activeIdx < numPlayers) {
             Player* cur = gs->players[activeIdx];
             float iconSz      = cardPanel.width * cardScale * 0.15f;
-            float iconStartX  = cardX + (cardPanel.width * cardScale - iconSz) - 306.0f;
+            float iconStartX  = cardX + (cardPanel.width * cardScale - iconSz) - 306.0f * globalScale;
             float iconY       = btnPlay.getY() + btnPlay.getHeight() - 198.0f * globalScale;
             float iconScaleVal = iconSz / (float)playerIconsB[activeIdx % 4].width;
-            DrawRectangleRec({iconStartX - 3, iconY - 3, iconSz + 6, iconSz + 6},
+            DrawRectangleRec({iconStartX - 3*globalScale, iconY - 3*globalScale, iconSz + 6*globalScale, iconSz + 6*globalScale},
                              {255,235,202,255});
-            DrawRectangleLinesEx({iconStartX - 3, iconY - 2, iconSz + 6, iconSz + 6},
+            DrawRectangleLinesEx({iconStartX - 3*globalScale, iconY - 2*globalScale, iconSz + 6*globalScale, iconSz + 6*globalScale},
                                  2, {148,73,68,255});
             DrawTextureEx(playerIconsB[activeIdx % 4], {iconStartX, iconY}, 0.0f,
                           iconScaleVal, WHITE);
@@ -2416,8 +2416,8 @@ void GameScreen::draw() {
 // ─── drawPlayTab ──────────────────────────────────────────────────────────────
 void GameScreen::drawPlayTab(float cardX, float cardScale) {
     float boxPad = 12.0f * globalScale;
-    float boxX   = cardX + boxPad + 20.0f;
-    float boxY   = btnPlay.getY() + btnPlay.getHeight() + boxPad + 10.0f;
+    float boxX   = cardX + boxPad + 20.0f * globalScale;
+    float boxY   = btnPlay.getY() + btnPlay.getHeight() + boxPad + 10.0f * globalScale;
     float boxW   = cardPanel.width * cardScale - 6.0f * boxPad;
     float boxH   = 120.0f * globalScale;
 
@@ -2447,7 +2447,7 @@ void GameScreen::drawPlayTab(float cardX, float cardScale) {
     }
 
     int logSz   = (int)(11 * globalScale);
-    float lineH = (float)(logSz + 3) * globalScale;
+    float lineH = (float)(logSz + 3);
     float maxLineW = boxW - 16*globalScale;
     float logMaxY = boxY + boxH - 4*globalScale;
 
@@ -2517,8 +2517,8 @@ void GameScreen::drawAssetsTab(float cardX, float cardScale) {
     if (!p) return;
 
     float pad   = 12.0f * globalScale;
-    float listX = cardX + pad + 20.0f;
-    float listY = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f;
+    float listX = cardX + pad + 20.0f * globalScale;
+    float listY = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f * globalScale;
     float listW = cardPanel.width * cardScale - 6.0f * pad;
     float rowH  = 24.0f * globalScale;
     int   rowSz = (int)(13 * globalScale);
@@ -2530,7 +2530,10 @@ void GameScreen::drawAssetsTab(float cardX, float cardScale) {
     if (props.empty()) {
         DrawText("Belum ada properti.", (int)listX, (int)listY, rowSz, {120,80,75,255});
     } else {
-        float maxY = listY + (cardPanel.height * cardScale) * 0.52f;
+        int sh2 = GetScreenHeight();
+        float cardY = (sh2 - cardPanel.height * cardScale) / 2.0f;
+        float panelBottom = cardY + cardPanel.height * cardScale;
+        float maxY = panelBottom - pad;
         for (auto* prop : props) {
             if (listY > maxY) break;
             std::string tp = prop->getTileType();
@@ -2591,15 +2594,15 @@ void GameScreen::drawPlayersTab(float cardX, float cardScale) {
     };
 
     float pad     = 12.0f * globalScale;
-    float listX   = cardX + pad + 20.0f;
-    float listY   = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f;
+    float listX   = cardX + pad + 20.0f * globalScale;
+    float listY   = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f * globalScale;
     float listW   = cardPanel.width * cardScale - 6.0f * pad;
     float cardH   = 58.0f * globalScale;
     float cardGap = 5.0f * globalScale;
     float iconBox = cardH - 8.0f * globalScale;
     int   nameSz  = (int)(15 * globalScale);
     int   statSz  = (int)(13 * globalScale);
-    float statIconH = (float)(statSz + 4) * globalScale;
+    float statIconH = (float)(statSz + 4);
 
     int count = (int)gs->players.size();
     for (int i = 0; i < count; i++) {
@@ -2670,15 +2673,18 @@ void GameScreen::drawPlayersTab(float cardX, float cardScale) {
 void GameScreen::drawLogTab(float cardX, float cardScale) {
     if (!gs) return;
     float pad   = 12.0f * globalScale;
-    float listX = cardX + pad + 20.0f;
-    float listY = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f;
+    float listX = cardX + pad + 20.0f * globalScale;
+    float listY = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f * globalScale;
     float listW = cardPanel.width * cardScale - 6.0f * pad;
     int   rowSz = (int)(11 * globalScale);
-    float lineH = (float)(rowSz + 4) * globalScale;
-    float maxY  = listY + (cardPanel.height * cardScale) * 0.88f;
+    float lineH = (float)(rowSz + 4);
+    int   sh2   = GetScreenHeight();
+    float cardY = (sh2 - cardPanel.height * cardScale) / 2.0f;
+    float panelBottom = cardY + cardPanel.height * cardScale;
+    float maxY  = panelBottom - pad;
 
     DrawText("Log Permainan:", (int)listX, (int)listY, rowSz + 2, {80,40,35,255});
-    listY += (rowSz + 6) * globalScale;
+    listY += (float)(rowSz + 6);
 
     auto& log = gs->transaction_log;
     if (log.empty()) {
@@ -2760,6 +2766,7 @@ void GameScreen::drawLogTab(float cardX, float cardScale) {
         logScroll = 0.0f;
     }
 
+    BeginScissorMode((int)(listX - 2), (int)listY, (int)(listW + 4), (int)(maxY - listY));
     float drawY = listY - logScroll;
     for (int wi = 0; wi < (int)allWrapped.size(); wi++) {
         Color col = (wi < (int)entryColors.size()) ? entryColors[wi] : Color{60,30,25,220};
@@ -2770,6 +2777,7 @@ void GameScreen::drawLogTab(float cardX, float cardScale) {
             drawY += lineH;
         }
     }
+    EndScissorMode();
 
     if (contentH > (maxY - listY)) {
         float sbX = listX + listW - 6.0f * globalScale;
@@ -3434,7 +3442,7 @@ void GameScreen::drawSkillCardSection(float cardX, float cardScale, float startY
     if (handSz == 0) return;
 
     float pad   = 12.0f * globalScale;
-    float sectX = cardX + pad + 20.0f;
+    float sectX = cardX + pad + 20.0f * globalScale;
     float sectW = cardPanel.width * cardScale - 6.0f * pad;
     float sectY = startY;
     int   lblSz = (int)(12 * globalScale);
@@ -3663,8 +3671,8 @@ void GameScreen::drawDebtMode(float cardX, float cardScale) {
     Player* p = gs->currentTurnPlayer();
 
     float pad   = 12.0f * globalScale;
-    float boxX  = cardX + pad + 20.0f;
-    float boxY  = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f;
+    float boxX  = cardX + pad + 20.0f * globalScale;
+    float boxY  = btnPlay.getY() + btnPlay.getHeight() + pad + 10.0f * globalScale;
     float boxW  = cardPanel.width * cardScale - 6.0f * pad;
     float boxH  = 100.0f * globalScale;
 
@@ -3750,7 +3758,7 @@ void GameScreen::drawCardPopup() {
 
     // ── desc text: word-wrap into lines first, then draw centered ────────
     int descSz     = (int)(15 * globalScale);
-    float lineH    = (float)(descSz + 6) * globalScale;
+    float lineH    = (float)(descSz + 6);
     float maxLineW = cW * 0.80f;
     Color descC    = {40, 30, 20, 240};
 

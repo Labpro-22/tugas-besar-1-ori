@@ -1,20 +1,31 @@
-# Makefile for Nimonspoli — supports 'make' (CLI) and 'make gui' (SFML GUI)
+# Makefile for Nimonspoli — supports 'make' (CLI) and 'make gui' (GUI)
 
 CXX      := g++
 CXXFLAGS := -Wall -Wextra -std=c++17 -I include -I .
 
-SRC_DIR  := src
-OBJ_DIR  := build
-BIN_DIR  := bin
-DATA_DIR := data
+SRC_DIR    := src
+OBJ_DIR    := build
+BIN_DIR    := bin
+DATA_DIR   := data
 CONFIG_DIR := config
 
-# ── Raylib (GUI) ──────────────────────────────────────────────────────────────
-RAYLIB_INC        := -I/opt/homebrew/include
-RAYLIB_LIB        := -L/opt/homebrew/lib -lraylib
-RAYLIB_FRAMEWORKS := -framework CoreVideo -framework IOKit -framework Cocoa \
-                     -framework GLUT -framework OpenGL
-GUI_LDFLAGS       := $(RAYLIB_LIB) $(RAYLIB_FRAMEWORKS)
+# ── Platform detection ────────────────────────────────────────────────────────
+UNAME := $(shell uname -s)
+
+ifeq ($(UNAME), Darwin)
+  # macOS: raylib via Homebrew
+  RAYLIB_INC        := -I/opt/homebrew/include
+  RAYLIB_LIB        := -L/opt/homebrew/lib -lraylib
+  RAYLIB_FRAMEWORKS := -framework CoreVideo -framework IOKit -framework Cocoa \
+                       -framework GLUT -framework OpenGL
+  GUI_LDFLAGS       := $(RAYLIB_LIB) $(RAYLIB_FRAMEWORKS)
+else
+  # Linux: raylib via system package (libraylib-dev) or pkg-config
+  RAYLIB_INC  := $(shell pkg-config --cflags raylib 2>/dev/null || echo "")
+  RAYLIB_LIB  := $(shell pkg-config --libs   raylib 2>/dev/null || echo "-lraylib")
+  # raylib on Linux needs these additional system libs
+  GUI_LDFLAGS := $(RAYLIB_LIB) -lGL -lm -lpthread -ldl -lrt -lX11
+endif
 
 # ── CLI Build (excludes gui_main.cpp and src/views/gui/) ─────────────────────
 CLI_SRCS := $(shell find $(SRC_DIR) -name '*.cpp' \
@@ -42,7 +53,7 @@ gui: directories $(GUI_TARGET)
 directories:
 	@mkdir -p $(OBJ_DIR)/cli $(OBJ_DIR)/gui $(BIN_DIR) $(DATA_DIR) $(CONFIG_DIR)
 
-# ── CLI compile (with auto header dependency tracking via -MMD) ───────────────
+# ── CLI compile ───────────────────────────────────────────────────────────────
 $(OBJ_DIR)/cli/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
@@ -51,7 +62,7 @@ $(CLI_TARGET): $(CLI_OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 	@echo "CLI build OK → $(CLI_TARGET)"
 
-# ── GUI compile (with auto header dependency tracking via -MMD) ───────────────
+# ── GUI compile ───────────────────────────────────────────────────────────────
 $(OBJ_DIR)/gui/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(RAYLIB_INC) -DGUI_MODE -MMD -MP -c $< -o $@

@@ -36,17 +36,17 @@ void NewGameScreen::loadAssets() {
     const float TARGET_BTN_H = 55.0f;
     float btnY = sh * 0.84f;
 
-    btnBack.load("assets/new-game-page/back 2.png", 0, btnY + 2.0f, 1.0f);
+    btnBack.load("assets/new-game-page/back 2.png", 0, btnY + 2.0f * globalScale, 1.0f);
     btnBack.setScale(globalScale * 48.2f/ btnBack.getHeight());
 
-    btnStart.load("assets/new-game-page/start 2.png", 0, btnY + 2.0f, 1.0f);
+    btnStart.load("assets/new-game-page/start 2.png", 0, btnY + 2.0f * globalScale, 1.0f);
     btnStart.setScale(TARGET_BTN_H * globalScale / btnStart.getHeight());
 
     float gap = 30.0f * globalScale;
     float totalW = btnBack.getWidth() + gap + btnStart.getWidth();
     float groupX = (sw - totalW) / 2.0f;
-    btnBack.setPosition(groupX, btnY - 57.0f);
-    btnStart.setPosition(groupX + btnBack.getWidth() + gap, btnY - 62.5f);
+    btnBack.setPosition(groupX, btnY - 57.0f * globalScale);
+    btnStart.setPosition(groupX + btnBack.getWidth() + gap, btnY - 62.5f * globalScale);
     TraceLog(LOG_INFO, "NGS: buttons loaded");
 }
 
